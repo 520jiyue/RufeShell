@@ -1,0 +1,10 @@
+{
+  "app": {
+    "windows": [{
+      "title": "FinalPowerShell · 隔离自动测试",
+      "width": 1440,
+      "height": 900,
+      "additionalBrowserArgs": "--remote-debugging-port=9223"
+    }]
+  }
+}
