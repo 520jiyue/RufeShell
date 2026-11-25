@@ -1202,7 +1202,7 @@ dependencies = [
 
 [[package]]
 name = "finalpowershell"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1214,6 +1214,7 @@ dependencies = [
  "russh-sftp",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "ssh-key",
  "tauri",
  "tauri-build",

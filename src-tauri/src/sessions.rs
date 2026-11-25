@@ -1,7 +1,10 @@
 use std::{
     collections::HashMap,
     path::PathBuf,
-    sync::{Arc, Mutex as StdMutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex as StdMutex,
+    },
     time::Duration,
 };
 
@@ -9,13 +12,14 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use russh::{
     client,
     keys::{HashAlg, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate},
-    ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect,
+    Channel, ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect,
 };
 use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::OpenFlags;
+use russh_sftp::protocol::{FileAttributes, OpenFlags};
 use serde::Serialize;
 use tokio::{
     io::AsyncWriteExt,
+    net::TcpStream,
     sync::{broadcast, oneshot, Mutex},
 };
 use uuid::Uuid;
@@ -25,18 +29,35 @@ use crate::domain::{
     SessionStatus, SystemMetrics,
 };
 
-type ClientHandle = client::Handle<ClientHandler>;
+pub type ClientHandle = client::Handle<ClientHandler>;
 type TerminalWriter = ChannelWriteHalf<client::Msg>;
 
-struct ClientHandler {
-    host_key: String,
-    expected_host_key: Option<String>,
+#[derive(Clone)]
+pub struct ForwardedTarget {
+    pub target_host: String,
+    pub target_port: u16,
+    pub active_connections: Arc<AtomicU64>,
+    pub bytes_sent: Arc<AtomicU64>,
+    pub bytes_received: Arc<AtomicU64>,
 }
 
-fn client_handler(host_key: String, expected_host_key: Option<String>) -> ClientHandler {
+pub type ForwardedRegistry = Arc<StdMutex<HashMap<(String, u16), ForwardedTarget>>>;
+
+pub struct ClientHandler {
+    host_key: String,
+    expected_host_key: Option<String>,
+    forwarded: ForwardedRegistry,
+}
+
+fn client_handler(
+    host_key: String,
+    expected_host_key: Option<String>,
+    forwarded: ForwardedRegistry,
+) -> ClientHandler {
     ClientHandler {
         host_key,
         expected_host_key,
+        forwarded,
     }
 }
 
@@ -59,6 +80,46 @@ impl client::Handler for ClientHandler {
             return Ok(false);
         }
         Ok(true)
+    }
+
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: Channel<client::Msg>,
+        connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        let key = (connected_address.to_owned(), connected_port as u16);
+        let target = {
+            let map = self.forwarded.lock().expect("端口转发锁不可用");
+            map.get(&key)
+                .cloned()
+                .or_else(|| map.get(&("0.0.0.0".into(), connected_port as u16)).cloned())
+                .or_else(|| map.get(&("127.0.0.1".into(), connected_port as u16)).cloned())
+                .or_else(|| map.get(&("".into(), connected_port as u16)).cloned())
+        };
+        let Some(target) = target else {
+            let _ = reply.reject(russh::ChannelOpenFailure::AdministrativelyProhibited).await;
+            return Ok(());
+        };
+        reply.accept().await;
+        tokio::spawn(async move {
+            target.active_connections.fetch_add(1, Ordering::Relaxed);
+            if let Ok(mut local) =
+                TcpStream::connect((target.target_host.as_str(), target.target_port)).await
+            {
+                let mut stream = channel.into_stream();
+                if let Ok((sent, recv)) = tokio::io::copy_bidirectional(&mut local, &mut stream).await {
+                    target.bytes_sent.fetch_add(sent, Ordering::Relaxed);
+                    target.bytes_received.fetch_add(recv, Ordering::Relaxed);
+                }
+            }
+            target.active_connections.fetch_sub(1, Ordering::Relaxed);
+        });
+        Ok(())
     }
 }
 
@@ -86,6 +147,7 @@ struct Session {
     profile: ConnectionProfile,
     password: Option<String>,
     host_key: String,
+    forwarded: ForwardedRegistry,
 }
 
 pub struct SessionManager {
@@ -111,6 +173,17 @@ impl SessionManager {
         password: Option<String>,
         expected_host_key: Option<String>,
     ) -> Result<String, AppError> {
+        self.connect_with_timeout(profile, password, expected_host_key, 15)
+            .await
+    }
+
+    pub async fn connect_with_timeout(
+        &self,
+        profile: ConnectionProfile,
+        password: Option<String>,
+        expected_host_key: Option<String>,
+        timeout_secs: u64,
+    ) -> Result<String, AppError> {
         let (events, _) = broadcast::channel(512);
         let id = Uuid::new_v4().to_string();
         emit(&events, &id, SessionStatus::Connecting, None);
@@ -121,13 +194,20 @@ impl SessionManager {
             ..Default::default()
         });
         let address = (profile.host.as_str(), profile.port);
+        let forwarded: ForwardedRegistry = Arc::new(StdMutex::new(HashMap::new()));
         let handler = client_handler(
             expected_host_key.clone().unwrap_or_default(),
             expected_host_key.clone(),
+            forwarded.clone(),
         );
-        let mut handle = client::connect(config, address, handler)
-            .await
-            .map_err(|error| AppError::Ssh(error.to_string()))?;
+        let connect_timeout = Duration::from_secs(timeout_secs.clamp(3, 120));
+        let mut handle = tokio::time::timeout(
+            connect_timeout,
+            client::connect(config, address, handler),
+        )
+        .await
+        .map_err(|_| AppError::Ssh(format!("连接超时（{} 秒），请检查主机或网络", connect_timeout.as_secs())))?
+        .map_err(|error| AppError::Ssh(error.to_string()))?;
         if expected_host_key.is_none() {
             return Err(AppError::Ssh("缺少已确认的主机公钥".into()));
         }
@@ -179,6 +259,7 @@ impl SessionManager {
             password,
             host_key: expected_host_key.expect("已验证主机公钥"),
             monitor: Mutex::new(None),
+            forwarded,
         });
         self.sessions
             .lock()
@@ -467,7 +548,11 @@ impl SessionManager {
             nodelay: true,
             ..Default::default()
         });
-        let handler = client_handler(session.host_key.clone(), Some(session.host_key.clone()));
+        let handler = client_handler(
+            session.host_key.clone(),
+            Some(session.host_key.clone()),
+            Arc::new(StdMutex::new(HashMap::new())),
+        );
         let mut handle = tokio::time::timeout(
             Duration::from_secs(8),
             client::connect(
@@ -528,6 +613,201 @@ impl SessionManager {
         sftp.set_timeout(30);
         *slot = Some(sftp.clone());
         Ok(sftp)
+    }
+
+    pub async fn sftp_for(&self, id: &str) -> Result<Arc<SftpSession>, AppError> {
+        let session = self.get(id)?;
+        self.sftp(&session).await
+    }
+
+    pub fn handle_for(&self, id: &str) -> Result<Arc<Mutex<ClientHandle>>, AppError> {
+        Ok(self.get(id)?.handle.clone())
+    }
+
+    pub fn forwarded_for(&self, id: &str) -> Result<ForwardedRegistry, AppError> {
+        Ok(self.get(id)?.forwarded.clone())
+    }
+
+    pub async fn exec_command(&self, id: &str, command: &str) -> Result<String, AppError> {
+        let session = self.get(id)?;
+        let mut slot = session.monitor.lock().await;
+        if slot.is_none() {
+            *slot = Some(self.connect_monitor(&session).await?);
+        }
+        let handle = slot.as_mut().expect("运维连接已建立");
+        let mut channel = match handle.channel_open_session().await {
+            Ok(ch) => ch,
+            Err(_) => {
+                *slot = Some(self.connect_monitor(&session).await?);
+                slot.as_mut().expect("运维连接重连").channel_open_session().await?
+            }
+        };
+        channel.exec(true, command.as_bytes()).await?;
+        wait_for_request(&mut channel, "命令执行").await?;
+
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut exit_status = None;
+        tokio::time::timeout(Duration::from_secs(15), async {
+            while let Some(message) = channel.wait().await {
+                match message {
+                    ChannelMsg::Data { data } => {
+                        if stdout.len() + data.len() > 2 * 1024 * 1024 {
+                            break;
+                        }
+                        stdout.extend_from_slice(&data);
+                    }
+                    ChannelMsg::ExtendedData { data, .. } => {
+                        if stderr.len() + data.len() <= 32 * 1024 {
+                            stderr.extend_from_slice(&data);
+                        }
+                    }
+                    ChannelMsg::ExitStatus { exit_status: code } => exit_status = Some(code),
+                    ChannelMsg::Eof | ChannelMsg::Close => break,
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .map_err(|_| AppError::Ssh("远程命令执行超时".into()))?;
+
+        if exit_status.is_some_and(|code| code != 0) && stdout.is_empty() && !stderr.is_empty() {
+            return Err(AppError::Ssh(
+                String::from_utf8_lossy(&stderr).trim().to_owned(),
+            ));
+        }
+        Ok(String::from_utf8_lossy(&stdout).into_owned())
+    }
+
+    pub async fn create_remote_file(&self, id: &str, path: &str) -> Result<(), AppError> {
+        validate_remote_path(path)?;
+        let sftp = self.sftp_for(id).await?;
+        if sftp.try_exists(path).await? {
+            return Err(AppError::Validation("目标文件已存在".into()));
+        }
+        let mut file = sftp
+            .open_with_flags(
+                path,
+                OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE,
+            )
+            .await?;
+        file.flush().await?;
+        file.close().await?;
+        Ok(())
+    }
+
+    pub async fn create_remote_directory(&self, id: &str, path: &str) -> Result<(), AppError> {
+        validate_remote_path(path)?;
+        let sftp = self.sftp_for(id).await?;
+        if sftp.try_exists(path).await? {
+            return Err(AppError::Validation("目标目录已存在".into()));
+        }
+        sftp.create_dir(path).await?;
+        Ok(())
+    }
+
+    pub async fn rename_remote_entry(
+        &self,
+        id: &str,
+        old_path: &str,
+        new_path: &str,
+    ) -> Result<(), AppError> {
+        validate_remote_path(old_path)?;
+        validate_remote_path(new_path)?;
+        let sftp = self.sftp_for(id).await?;
+        if sftp.try_exists(new_path).await? {
+            return Err(AppError::Validation("目标名称已存在".into()));
+        }
+        sftp.rename(old_path, new_path).await?;
+        Ok(())
+    }
+
+    pub async fn delete_remote_entry(
+        &self,
+        id: &str,
+        path: &str,
+        recursive: bool,
+    ) -> Result<(), AppError> {
+        validate_remote_path(path)?;
+        if path == "/" {
+            return Err(AppError::Validation("禁止删除根目录 /".into()));
+        }
+        let sftp = self.sftp_for(id).await?;
+        let meta = sftp.metadata(path).await?;
+        if !meta.file_type().is_dir() {
+            sftp.remove_file(path).await?;
+            return Ok(());
+        }
+        if !recursive {
+            sftp.remove_dir(path).await?;
+            return Ok(());
+        }
+        delete_dir_recursive(&sftp, path).await
+    }
+
+    pub async fn get_remote_permissions(&self, id: &str, path: &str) -> Result<u32, AppError> {
+        validate_remote_path(path)?;
+        let sftp = self.sftp_for(id).await?;
+        let meta = sftp.metadata(path).await?;
+        Ok(meta.permissions.unwrap_or(0o644) & 0o7777)
+    }
+
+    pub async fn set_remote_permissions(
+        &self,
+        id: &str,
+        path: &str,
+        mode: u32,
+    ) -> Result<(), AppError> {
+        validate_remote_path(path)?;
+        if mode > 0o7777 {
+            return Err(AppError::Validation("权限值无效".into()));
+        }
+        let sftp = self.sftp_for(id).await?;
+        let attrs = FileAttributes {
+            permissions: Some(mode),
+            ..Default::default()
+        };
+        sftp.set_metadata(path, attrs).await?;
+        Ok(())
+    }
+
+    pub async fn backup_and_write_text_file(
+        &self,
+        id: &str,
+        remote: &str,
+        text: String,
+        create_backup: bool,
+    ) -> Result<(), AppError> {
+        validate_remote_path(remote)?;
+        if text.len() > 1024 * 1024 {
+            return Err(AppError::Validation("编辑后的文件不能超过 1 MB".into()));
+        }
+        let session = self.get(id)?;
+        let sftp = self.sftp(&session).await?;
+        if !sftp.try_exists(remote).await? {
+            return Err(AppError::Validation("远程文件已不存在，未执行保存".into()));
+        }
+        if create_backup {
+            let mut src = sftp.open(remote).await?;
+            let mut existing = Vec::new();
+            tokio::io::AsyncReadExt::read_to_end(&mut src, &mut existing).await?;
+            src.close().await?;
+            let stamp = chrono::Utc::now().format("%Y%m%d%H%M%S");
+            let backup_path = format!("{remote}.bak.{stamp}");
+            if !sftp.try_exists(&backup_path).await? {
+                let mut dst = sftp
+                    .open_with_flags(
+                        &backup_path,
+                        OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE,
+                    )
+                    .await?;
+                dst.write_all(&existing).await?;
+                dst.flush().await?;
+                dst.close().await?;
+            }
+        }
+        sftp.write(remote, text.as_bytes()).await?;
+        Ok(())
     }
 
     fn get(&self, id: &str) -> Result<Arc<Session>, AppError> {
@@ -669,7 +949,7 @@ fn parse_metrics(text: &str, previous: Option<(u64, u64)>) -> Result<SystemMetri
                 memory_bytes,
             })
         })
-        .take(6)
+        .take(12)
         .collect();
     let mounts = section(text, "MOUNTS")
         .lines()
@@ -869,9 +1149,33 @@ fn host_key_info(key: &PublicKey, actual: &str) -> HostKeyInfo {
     }
 }
 
-fn validate_remote_path(path: &str) -> Result<(), AppError> {
+pub(crate) fn validate_remote_path(path: &str) -> Result<(), AppError> {
     if path.is_empty() || path.contains('\0') || path.split('/').any(|part| part == "..") {
         return Err(AppError::Validation("远端路径无效".into()));
+    }
+    Ok(())
+}
+
+async fn delete_dir_recursive(sftp: &SftpSession, path: &str) -> Result<(), AppError> {
+    let mut stack = vec![(path.to_owned(), false)];
+    while let Some((current, visited)) = stack.pop() {
+        if visited {
+            sftp.remove_dir(&current).await?;
+            continue;
+        }
+        stack.push((current.clone(), true));
+        for entry in sftp.read_dir(&current).await? {
+            let name = entry.file_name();
+            if name == "." || name == ".." {
+                continue;
+            }
+            let child = entry.path();
+            if entry.file_type().is_dir() {
+                stack.push((child, false));
+            } else {
+                sftp.remove_file(&child).await?;
+            }
+        }
     }
     Ok(())
 }

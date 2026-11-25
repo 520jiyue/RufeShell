@@ -1,6 +1,6 @@
 {
-  "name": "finalpowershell-workbench",
-  "version": "1.0.0",
+  "name": "rufeshell-workbench",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {

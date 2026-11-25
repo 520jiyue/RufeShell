@@ -1,10 +1,11 @@
-use crate::domain::{AppError, ConnectionProfile};
+use crate::domain::{AppError, ConnectionProfile, WorkbenchState};
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
 const SCHEMA_VERSION: u32 = 1;
+const WORKBENCH_SCHEMA_VERSION: u32 = 1;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Database {
@@ -87,6 +88,53 @@ impl Store {
     }
 }
 
+pub struct WorkbenchStore {
+    path: PathBuf,
+}
+
+impl WorkbenchStore {
+    pub fn open(directory: PathBuf) -> Result<Self, AppError> {
+        fs::create_dir_all(&directory).map_err(storage)?;
+        let path = directory.join("workbench.json");
+        let store = Self { path };
+        if store.path.exists() {
+            store.load()?;
+        }
+        Ok(store)
+    }
+
+    pub fn load(&self) -> Result<WorkbenchState, AppError> {
+        if !self.path.exists() {
+            return Ok(WorkbenchState {
+                schema_version: WORKBENCH_SCHEMA_VERSION,
+                ..Default::default()
+            });
+        }
+        let bytes = fs::read(&self.path).map_err(storage)?;
+        let mut state: WorkbenchState = serde_json::from_slice(&bytes)
+            .map_err(|error| AppError::Storage(format!("工作台配置格式无效：{error}")))?;
+        if state.schema_version > WORKBENCH_SCHEMA_VERSION {
+            return Err(AppError::Storage("工作台配置来自更新版本，请先升级应用".into()));
+        }
+        if state.schema_version == 0 {
+            state.schema_version = WORKBENCH_SCHEMA_VERSION;
+        }
+        Ok(state)
+    }
+
+    pub fn save(&self, mut state: WorkbenchState) -> Result<(), AppError> {
+        state.schema_version = WORKBENCH_SCHEMA_VERSION;
+        let json = serde_json::to_vec_pretty(&state)
+            .map_err(|error| AppError::Storage(error.to_string()))?;
+        let temp = self.path.with_extension("json.tmp");
+        fs::write(&temp, json).map_err(storage)?;
+        if self.path.exists() {
+            fs::copy(&self.path, self.path.with_extension("json.backup")).map_err(storage)?;
+        }
+        replace_file(&temp, &self.path)
+    }
+}
+
 fn storage(error: std::io::Error) -> AppError {
     AppError::Storage(error.to_string())
 }
@@ -163,5 +211,29 @@ mod tests {
         .unwrap();
         let store = Store::open(directory.path().to_owned()).unwrap();
         assert_eq!(store.get("legacy").unwrap().host, "example.com");
+    }
+
+    #[test]
+    fn persists_workbench_state_round_trip() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = WorkbenchStore::open(directory.path().to_owned()).unwrap();
+        let mut state = store.load().unwrap();
+        state.settings.font_size = 16;
+        state.settings.theme = "dracula".into();
+        state.history.push(crate::domain::HistoryEntry {
+            id: "h1".into(),
+            command: "uname -a".into(),
+            timestamp: 100,
+            server_id: "s1".into(),
+            server_name: "Test".into(),
+            host: "root@127.0.0.1:22".into(),
+            outcome: "sent".into(),
+        });
+        store.save(state).unwrap();
+        let reloaded = store.load().unwrap();
+        assert_eq!(reloaded.settings.font_size, 16);
+        assert_eq!(reloaded.settings.theme, "dracula");
+        assert_eq!(reloaded.history.len(), 1);
+        assert_eq!(reloaded.history[0].command, "uname -a");
     }
 }

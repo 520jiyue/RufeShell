@@ -99,6 +99,10 @@ pub struct ConnectionDraft {
 
 impl ConnectionProfile {
     pub fn from_draft(draft: ConnectionDraft) -> Result<Self, AppError> {
+        Self::with_id(Uuid::new_v4().to_string(), draft)
+    }
+
+    pub fn with_id(id: String, draft: ConnectionDraft) -> Result<Self, AppError> {
         let name = draft.name.trim();
         let host = Self::normalize_host(&draft.host);
         let username = draft.username.trim();
@@ -122,7 +126,7 @@ impl ConnectionProfile {
             return Err(AppError::Validation("请选择私钥文件".into()));
         }
         Ok(Self {
-            id: Uuid::new_v4().to_string(),
+            id,
             name: name.to_owned(),
             host,
             port: draft.port,
@@ -140,6 +144,348 @@ impl ConnectionProfile {
             .trim_end_matches('/')
             .to_owned()
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ConnectionMeta {
+    pub group: String,
+    pub tags: Vec<String>,
+    pub favorite: bool,
+    pub sort_order: i64,
+    pub connect_timeout_secs: Option<u64>,
+    pub auto_reconnect: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryEntry {
+    pub id: String,
+    pub command: String,
+    pub timestamp: i64,
+    pub server_id: String,
+    pub server_name: String,
+    pub host: String,
+    pub outcome: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandSnippet {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    pub group: String,
+    pub shortcut: Option<String>,
+    pub description: Option<String>,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MetricsVisibility {
+    pub cpu: bool,
+    pub memory: bool,
+    pub swap: bool,
+    pub network: bool,
+    pub disk: bool,
+    pub processes: bool,
+    pub mounts: bool,
+}
+
+impl Default for MetricsVisibility {
+    fn default() -> Self {
+        Self {
+            cpu: true,
+            memory: true,
+            swap: true,
+            network: true,
+            disk: true,
+            processes: true,
+            mounts: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AlertRule {
+    pub id: String,
+    pub metric: String,
+    pub threshold: f32,
+    pub cooldown_secs: u64,
+    pub enabled: bool,
+}
+
+impl Default for AlertRule {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            metric: "cpu".into(),
+            threshold: 85.0,
+            cooldown_secs: 60,
+            enabled: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TerminalSettings {
+    pub font_family: String,
+    pub font_size: u16,
+    pub theme: String,
+    pub copy_on_select: bool,
+    pub right_click_paste: bool,
+    pub auto_reconnect: bool,
+    pub reconnect_max_attempts: u8,
+    pub connect_timeout_secs: u64,
+    pub metrics_interval_secs: u64,
+    pub metrics_process_limit: usize,
+    pub metrics_warn_percent: f32,
+    pub metrics_danger_percent: f32,
+    pub metrics_visible: MetricsVisibility,
+    pub metrics_collapsed: Vec<String>,
+    pub create_backup_on_edit: bool,
+    pub verify_transfer_checksum: bool,
+    pub alert_rules: Vec<AlertRule>,
+}
+
+impl Default for TerminalSettings {
+    fn default() -> Self {
+        Self {
+            font_family: "\"Cascadia Mono\", Consolas, monospace".into(),
+            font_size: 14,
+            theme: "obsidian-emerald".into(),
+            copy_on_select: false,
+            right_click_paste: true,
+            auto_reconnect: true,
+            reconnect_max_attempts: 3,
+            connect_timeout_secs: 15,
+            metrics_interval_secs: 2,
+            metrics_process_limit: 6,
+            metrics_warn_percent: 75.0,
+            metrics_danger_percent: 90.0,
+            metrics_visible: MetricsVisibility::default(),
+            metrics_collapsed: Vec::new(),
+            create_backup_on_edit: true,
+            verify_transfer_checksum: true,
+            alert_rules: vec![
+                AlertRule {
+                    id: "alert-cpu".into(),
+                    metric: "cpu".into(),
+                    threshold: 85.0,
+                    cooldown_secs: 60,
+                    enabled: true,
+                },
+                AlertRule {
+                    id: "alert-mem".into(),
+                    metric: "memory".into(),
+                    threshold: 90.0,
+                    cooldown_secs: 60,
+                    enabled: true,
+                },
+                AlertRule {
+                    id: "alert-disk".into(),
+                    metric: "disk".into(),
+                    threshold: 90.0,
+                    cooldown_secs: 120,
+                    enabled: true,
+                },
+            ],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LocalShellKind {
+    PowerShell,
+    Cmd,
+    Wsl,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransferDirection {
+    Upload,
+    Download,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TransferStatus {
+    Queued,
+    Running,
+    Paused,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictPolicy {
+    Ask,
+    Overwrite,
+    Skip,
+    Rename,
+    Resume,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferTask {
+    pub id: String,
+    pub session_id: String,
+    pub direction: TransferDirection,
+    pub local_path: String,
+    pub remote_path: String,
+    pub file_name: String,
+    pub total_bytes: u64,
+    pub transferred_bytes: u64,
+    pub speed_bps: u64,
+    pub eta_seconds: Option<u64>,
+    pub status: TransferStatus,
+    pub error: Option<String>,
+    pub checksum_verified: Option<bool>,
+    pub checksum_detail: Option<String>,
+    pub conflict_policy: ConflictPolicy,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TransferConflict {
+    pub local_path: String,
+    pub remote_path: String,
+    pub file_name: String,
+    pub source_size: u64,
+    pub target_size: u64,
+    pub source_modified_at: Option<i64>,
+    pub target_modified_at: Option<i64>,
+    pub part_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LocalEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiffStatus {
+    Same,
+    NewerLocal,
+    NewerRemote,
+    SizeDiff,
+    OnlyLocal,
+    OnlyRemote,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FileDiffEntry {
+    pub name: String,
+    pub is_dir: bool,
+    pub local_path: Option<String>,
+    pub remote_path: Option<String>,
+    pub local_size: Option<u64>,
+    pub remote_size: Option<u64>,
+    pub local_modified_at: Option<i64>,
+    pub remote_modified_at: Option<i64>,
+    pub status: DiffStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForwardKind {
+    Local,
+    Remote,
+    Dynamic,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForwardRuleDraft {
+    pub kind: ForwardKind,
+    pub bind_host: String,
+    pub bind_port: u16,
+    pub target_host: String,
+    pub target_port: u16,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ForwardRuleInfo {
+    pub id: String,
+    pub session_id: String,
+    pub kind: ForwardKind,
+    pub bind_host: String,
+    pub bind_port: u16,
+    pub target_host: String,
+    pub target_port: u16,
+    pub active: bool,
+    pub active_connections: u64,
+    pub bytes_sent: u64,
+    pub bytes_received: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProcessDetail {
+    pub pid: u32,
+    pub user: String,
+    pub cpu_percent: f32,
+    pub memory_bytes: u64,
+    pub stat: String,
+    pub command: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SystemdUnit {
+    pub unit: String,
+    pub load: String,
+    pub active: String,
+    pub sub: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DockerContainer {
+    pub id: String,
+    pub name: String,
+    pub image: String,
+    pub status: String,
+    pub state: String,
+    pub cpu_percent: String,
+    pub memory_usage: String,
+    pub ports: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct WorkbenchState {
+    pub schema_version: u32,
+    pub connection_meta: std::collections::HashMap<String, ConnectionMeta>,
+    pub history: Vec<HistoryEntry>,
+    pub snippets: Vec<CommandSnippet>,
+    pub settings: TerminalSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportedConnection {
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth: AuthKind,
+    pub private_key_path: Option<String>,
+    #[serde(default)]
+    pub meta: ConnectionMeta,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionBundle {
+    pub schema_version: u32,
+    pub exported_at: i64,
+    pub connections: Vec<ExportedConnection>,
 }
 
 #[derive(Debug, Clone, Serialize)]
