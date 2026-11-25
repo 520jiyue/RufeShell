@@ -57,7 +57,7 @@ export function mountShell(): void {
           <div class="local-shells-strip">
             <div class="local-shells-head">
               <span class="local-shells-label" data-i18n-title="sidebar.localTitle" title="快速启动本地终端标签">${icon("terminal")}<span data-i18n="sidebar.local">本地终端</span></span>
-              <button id="local-admin-toggle" class="local-admin-toggle" type="button" aria-pressed="false" title="切换：以管理员权限启动本地终端">${icon("shield")}<span id="local-admin-label">管理员</span></button>
+              <button id="local-admin-toggle" class="local-admin-toggle is-ask" type="button" title="点击切换本地终端启动权限（每次询问 / 标准权限 / 管理员）">${icon("shield")}<span id="local-admin-label">选择权限</span></button>
             </div>
             <div class="local-shells-btns">
               <button type="button" class="local-shell-chip" data-local-shell="power_shell">PowerShell</button>
@@ -312,6 +312,7 @@ export function mountShell(): void {
         <span id="global-status" data-i18n="common.ready">就绪</span>
         <div class="statusbar-right">
           <button id="transfer-status-pill" type="button" class="transfer-status-pill" data-i18n="transfers.pillIdle">传输队列</button>
+          <button id="update-status-pill" type="button" class="update-status-pill">v1.3.0</button>
           <span>RufeShell</span>
         </div>
       </footer>
@@ -513,17 +514,25 @@ export function mountShell(): void {
           <label class="host-field"><span data-i18n="settings.connectTimeout">默认连接超时（秒）</span><input id="setting-connect-timeout" type="number" min="3" max="120" /></label>
           <label class="host-field"><span data-i18n="settings.reconnectMax">自动重连最大次数</span><input id="setting-reconnect-max" type="number" min="1" max="10" /></label>
         </div>
+        <div class="form-row">
+          <label class="host-field"><span data-i18n="settings.closeAction">点击关闭窗口时</span><select id="setting-close-action"></select></label>
+          <label class="host-field"><span data-i18n="settings.localPrivilege">本地终端权限</span><select id="setting-local-privilege"></select></label>
+        </div>
         <div class="settings-toggles">
           <label class="check-pill"><input id="setting-auto-reconnect" type="checkbox" /><span data-i18n="settings.autoReconnect">网络波动断开时自动重连（保留终端输出）</span></label>
           <label class="check-pill"><input id="setting-copy-on-select" type="checkbox" /><span data-i18n="settings.copyOnSelect">选中终端文本自动复制到剪贴板</span></label>
           <label class="check-pill"><input id="setting-right-click-paste" type="checkbox" /><span data-i18n="settings.rightClickPaste">在终端中右键直接粘贴剪贴板内容</span></label>
           <label class="check-pill"><input id="setting-edit-backup" type="checkbox" /><span data-i18n="settings.editBackup">在线编辑远程文件前自动生成 .bak 备份</span></label>
           <label class="check-pill"><input id="setting-transfer-checksum" type="checkbox" /><span data-i18n="settings.transferChecksum">大文件与同步传输完成后自动执行 SHA-256 校验</span></label>
+          <label class="check-pill"><input id="setting-auto-updates" type="checkbox" /><span data-i18n="settings.autoCheckUpdates">启动时自动检查 RufeShell 新版本更新</span></label>
         </div>
 
-        <div class="dialog-actions">
-          <button type="button" class="subtle close-dialog" data-i18n="common.cancel">取消</button>
-          <button type="submit" class="primary" data-i18n="settings.saveApply">应用并保存</button>
+        <div class="dialog-actions dialog-actions-split">
+          <button id="settings-check-update-btn" type="button" class="subtle">${icon("refresh")}<span data-i18n="settings.checkUpdatesBtn">检查更新</span></button>
+          <div class="dialog-actions-right">
+            <button type="button" class="subtle close-dialog" data-i18n="common.cancel">取消</button>
+            <button type="submit" class="primary" data-i18n="settings.saveApply">应用并保存</button>
+          </div>
         </div>
       </form>
     </dialog>
@@ -711,7 +720,7 @@ export function mountShell(): void {
       </div>
     </dialog>
 
-    <dialog id="relaunch-admin-dialog">
+    <dialog id="relaunch-admin-dialog" class="prompt-dialog">
       <div class="modal-shell">
         <div class="modal-head">
           <div>
@@ -720,10 +729,109 @@ export function mountShell(): void {
           </div>
           <button type="button" class="icon-button close-dialog" data-i18n-aria="common.close" aria-label="关闭">${icon("x")}</button>
         </div>
-        <p id="relaunch-admin-desc" class="dialog-description"></p>
-        <div class="dialog-actions">
-          <button type="button" class="subtle close-dialog" data-i18n="common.cancel">取消</button>
-          <button id="confirm-relaunch-admin-btn" type="button" class="primary" data-i18n="titlebar.adminRelaunchBtn">以管理员启动</button>
+        <div class="prompt-dialog-body">
+          <p id="relaunch-admin-desc" class="dialog-description"></p>
+          <div class="dialog-actions">
+            <button type="button" class="subtle close-dialog" data-i18n="common.cancel">取消</button>
+            <button id="confirm-relaunch-admin-btn" type="button" class="primary" data-i18n="titlebar.adminRelaunchBtn">以管理员启动</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="close-confirm-dialog" class="prompt-dialog">
+      <div class="modal-shell">
+        <div class="modal-head">
+          <div>
+            <span class="eyebrow" data-i18n="closeDialog.eyebrow">CLOSE WINDOW</span>
+            <h2 data-i18n="closeDialog.title">关闭 RufeShell</h2>
+          </div>
+          <button type="button" class="icon-button close-dialog" data-i18n-aria="common.close" aria-label="关闭">${icon("x")}</button>
+        </div>
+        <div class="prompt-dialog-body">
+          <p class="dialog-description" data-i18n="closeDialog.desc">点击关闭按钮时希望执行什么操作？最小化到系统托盘可保持当前会话后台运行，点击右下角托盘图标可随时恢复窗口。</p>
+          <label class="check-pill prompt-remember"><input id="close-confirm-remember" type="checkbox" /><span data-i18n="closeDialog.remember">不再询问（可在“设置”中随时更改）</span></label>
+          <div class="dialog-actions">
+            <button type="button" class="subtle close-dialog" data-i18n="common.cancel">取消</button>
+            <button id="close-action-tray" type="button" class="subtle" data-i18n="closeDialog.minimizeTray">最小化到托盘</button>
+            <button id="close-action-exit" type="button" class="primary danger-btn" data-i18n="closeDialog.exitApp">直接关闭</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="local-shell-privilege-dialog" class="prompt-dialog">
+      <div class="modal-shell">
+        <div class="modal-head">
+          <div>
+            <span class="eyebrow" data-i18n="localPriv.eyebrow">TERMINAL PRIVILEGE</span>
+            <h2 id="local-priv-title">选择启动权限</h2>
+          </div>
+          <button type="button" class="icon-button close-dialog" data-i18n-aria="common.close" aria-label="关闭">${icon("x")}</button>
+        </div>
+        <div class="prompt-dialog-body">
+          <p id="local-priv-desc" class="dialog-description"></p>
+          <div class="priv-choice-grid">
+            <button id="local-priv-standard" type="button" class="priv-choice-card">
+              <span class="priv-choice-icon">${icon("terminal")}</span>
+              <span class="priv-choice-copy">
+                <strong data-i18n="localPriv.standardBtn">标准权限</strong>
+                <small id="local-priv-standard-hint" data-i18n="localPriv.standardHint">在工作台内置标签页中直接打开</small>
+              </span>
+            </button>
+            <button id="local-priv-admin" type="button" class="priv-choice-card is-admin">
+              <span class="priv-choice-icon">${icon("shield")}</span>
+              <span class="priv-choice-copy">
+                <strong data-i18n="localPriv.adminBtn">管理员权限</strong>
+                <small id="local-priv-admin-hint" data-i18n="localPriv.adminHint">通过 Windows UAC 提权在新窗口中运行</small>
+              </span>
+            </button>
+          </div>
+          <label class="check-pill prompt-remember"><input id="local-priv-remember" type="checkbox" /><span data-i18n="localPriv.remember">记住此选择，不再询问（可在“设置”中修改）</span></label>
+          <div class="dialog-actions">
+            <button type="button" class="subtle close-dialog" data-i18n="common.cancel">取消</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="update-dialog" class="prompt-dialog">
+      <div class="modal-shell">
+        <div class="modal-head">
+          <div>
+            <span class="eyebrow" data-i18n="updater.eyebrow">SOFTWARE UPDATE</span>
+            <h2 data-i18n="updater.title">应用更新</h2>
+          </div>
+          <button type="button" class="icon-button close-dialog" data-i18n-aria="common.close" aria-label="关闭">${icon("x")}</button>
+        </div>
+        <div class="prompt-dialog-body">
+          <div class="updater-version-row">
+            <div class="updater-ver-chip">
+              <span data-i18n="updater.currentLabel">当前版本</span>
+              <strong id="updater-current-ver">v1.3.0</strong>
+            </div>
+            <span class="updater-ver-arrow">→</span>
+            <div class="updater-ver-chip is-latest">
+              <span data-i18n="updater.latestLabel">最新版本</span>
+              <strong id="updater-latest-ver">v1.3.0</strong>
+            </div>
+          </div>
+          <div id="updater-status-box" class="updater-status-box is-info"></div>
+          <div id="updater-notes-wrap" class="updater-notes-wrap hidden">
+            <div class="updater-notes-title" data-i18n="updater.notesTitle">更新说明</div>
+            <pre id="updater-notes" class="updater-notes"></pre>
+          </div>
+          <div id="updater-progress-wrap" class="updater-progress-wrap hidden">
+            <div class="updater-progress-track"><span id="updater-progress-bar"></span></div>
+            <div id="updater-progress-text" class="updater-progress-text"></div>
+          </div>
+          <div id="updater-session-warn" class="updater-session-warn hidden"></div>
+          <div class="dialog-actions">
+            <button type="button" class="subtle close-dialog" data-i18n="common.close">关闭</button>
+            <button id="updater-recheck-btn" type="button" class="subtle hidden" data-i18n="updater.recheckBtn">重新检查</button>
+            <button id="updater-download-btn" type="button" class="primary hidden" data-i18n="updater.downloadBtn">下载更新</button>
+            <button id="updater-install-btn" type="button" class="primary hidden" data-i18n="updater.installRestartBtn">安装并重启</button>
+          </div>
         </div>
       </div>
     </dialog>

@@ -5,10 +5,17 @@ import {
   getActiveSession,
   getConnectionMeta,
   loadWorkbenchState,
+  persistWorkbenchState,
   setConnectionMeta,
   state,
 } from "../state.ts";
-import type { Connection, ConnectionSortMode, Status } from "../types.ts";
+import type {
+  Connection,
+  ConnectionSortMode,
+  LocalShellKind,
+  LocalShellPrivilege,
+  Status,
+} from "../types.ts";
 import { $, escapeHtml, notify } from "../utils.ts";
 import { openConnectionDialog, startConnectionWithConfirmation } from "./dialogs.ts";
 import { createSession, openLocalTerminalSession } from "./sessions.ts";
@@ -230,14 +237,78 @@ export async function loadConnections(): Promise<void> {
   renderConnections();
 }
 
+let pendingLocalShell: LocalShellKind | null = null;
+
+function getLocalPrivilegeMode(): LocalShellPrivilege {
+  const mode = state.workbench.settings.local_shell_privilege;
+  if (mode === "standard" || mode === "admin") return mode;
+  return "ask";
+}
+
+function getLocalShellLabel(kind: LocalShellKind): string {
+  if (kind === "power_shell") return t("session.localPwsh");
+  if (kind === "cmd") return t("session.localCmd");
+  return t("session.localWsl");
+}
+
+function launchLocalShellWithPrivilege(kind: LocalShellKind, privilege: "standard" | "admin"): void {
+  if (privilege === "admin") {
+    if (state.isElevated) {
+      void openLocalTerminalSession(kind);
+      return;
+    }
+    void api
+      .openElevatedLocalTerminal(kind)
+      .then(() => notify(t("sidebar.localAdminOpened", { shell: getLocalShellLabel(kind) })))
+      .catch(error => notify(friendlyError(error), true));
+    return;
+  }
+
+  if (state.isElevated) {
+    notify(t("localPriv.elevatedNote"));
+  }
+  void openLocalTerminalSession(kind);
+}
+
+function openLocalShellPrivilegeDialog(kind: LocalShellKind): void {
+  pendingLocalShell = kind;
+  const label = getLocalShellLabel(kind);
+  $("#local-priv-title").textContent = t("localPriv.title", { shell: label });
+  $("#local-priv-desc").textContent = state.isElevated
+    ? t("localPriv.elevatedNote")
+    : t("localPriv.desc");
+  $("#local-priv-standard-hint").textContent = t("localPriv.standardHint");
+  $("#local-priv-admin-hint").textContent = state.isElevated
+    ? t("localPriv.adminBuiltinHint")
+    : t("localPriv.adminHint");
+  $<HTMLInputElement>("#local-priv-remember").checked = false;
+  $<HTMLDialogElement>("#local-shell-privilege-dialog").showModal();
+}
+
 export function syncLocalAdminToggle(): void {
   const btn = $<HTMLButtonElement>("#local-admin-toggle");
   const label = $<HTMLSpanElement>("#local-admin-label");
-  const active = state.isElevated || state.localShellAdmin;
-  btn.classList.toggle("active", active);
-  btn.setAttribute("aria-pressed", String(active));
-  label.textContent = t("sidebar.localAdmin");
-  btn.title = t(state.isElevated ? "sidebar.localAdminActiveTitle" : "sidebar.localAdminTitle");
+  const mode = getLocalPrivilegeMode();
+  const isAdminEffective = state.isElevated || mode === "admin";
+
+  btn.classList.toggle("active", isAdminEffective);
+  btn.classList.toggle("is-ask", !state.isElevated && mode === "ask");
+  btn.classList.toggle("is-standard", !state.isElevated && mode === "standard");
+  btn.classList.toggle("is-admin", isAdminEffective);
+
+  if (state.isElevated) {
+    label.textContent = t("sidebar.privAdmin");
+    btn.title = t("sidebar.localAdminActiveTitle");
+  } else {
+    const key =
+      mode === "admin"
+        ? "sidebar.privAdmin"
+        : mode === "standard"
+          ? "sidebar.privStandard"
+          : "sidebar.privAsk";
+    label.textContent = t(key);
+    btn.title = t("sidebar.privCycleTitle");
+  }
 }
 
 export function initConnections(): void {
@@ -258,26 +329,39 @@ export function initConnections(): void {
       notify(t("titlebar.adminAlreadyNotify"));
       return;
     }
-    state.localShellAdmin = !state.localShellAdmin;
+    const order: LocalShellPrivilege[] = ["ask", "standard", "admin"];
+    const next = order[(order.indexOf(getLocalPrivilegeMode()) + 1) % order.length];
+    state.workbench.settings.local_shell_privilege = next;
     syncLocalAdminToggle();
+    void persistWorkbenchState();
   });
+
+  const handlePrivilegeChoice = (choice: "standard" | "admin") => {
+    const kind = pendingLocalShell;
+    pendingLocalShell = null;
+    if ($<HTMLInputElement>("#local-priv-remember").checked) {
+      state.workbench.settings.local_shell_privilege = choice;
+      syncLocalAdminToggle();
+      void persistWorkbenchState();
+    }
+    $<HTMLDialogElement>("#local-shell-privilege-dialog").close();
+    if (kind) {
+      launchLocalShellWithPrivilege(kind, choice);
+    }
+  };
+
+  $("#local-priv-standard").addEventListener("click", () => handlePrivilegeChoice("standard"));
+  $("#local-priv-admin").addEventListener("click", () => handlePrivilegeChoice("admin"));
 
   document.querySelectorAll<HTMLButtonElement>("[data-local-shell]").forEach(btn =>
     btn.addEventListener("click", () => {
-      const kind = btn.dataset.localShell as "power_shell" | "cmd" | "wsl";
-      if (state.localShellAdmin && !state.isElevated) {
-        const shellNames = {
-          power_shell: t("session.localPwsh"),
-          cmd: t("session.localCmd"),
-          wsl: t("session.localWsl"),
-        };
-        void api
-          .openElevatedLocalTerminal(kind)
-          .then(() => notify(t("sidebar.localAdminOpened", { shell: shellNames[kind] })))
-          .catch(error => notify(friendlyError(error), true));
+      const kind = btn.dataset.localShell as LocalShellKind;
+      const mode = getLocalPrivilegeMode();
+      if (mode === "ask") {
+        openLocalShellPrivilegeDialog(kind);
         return;
       }
-      void openLocalTerminalSession(kind);
+      launchLocalShellWithPrivilege(kind, mode);
     }),
   );
 

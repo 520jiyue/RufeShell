@@ -68,6 +68,10 @@ export const api = {
   relaunchAsAdmin: () => invoke<void>("relaunch_as_admin"),
   openElevatedLocalTerminal: (kind: LocalShellKind) =>
     invoke<void>("open_elevated_local_terminal", { kind }),
+  hideToTray: () => invoke<void>("hide_to_tray"),
+  exitApp: () => invoke<void>("exit_app"),
+  syncTrayLanguage: (language: string) => invoke<void>("sync_tray_language", { language }),
+  appVersion: () => invoke<string>("app_version"),
   openLocalTerminal: (kind: LocalShellKind) =>
     invoke<string>("open_local_terminal", { kind }),
   sessionStatus: (sessionId: string) => invoke<Status>("session_status", { sessionId }),
@@ -207,18 +211,33 @@ export const dialogs = {
     }),
 };
 
+const noopUnlisten: UnlistenFn = () => {};
+
+export function hasTauriRuntime(): boolean {
+  return typeof window !== "undefined" && Boolean((window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+}
+
+function safeListen<T>(eventName: string, handler: (payload: T) => void): Promise<UnlistenFn> {
+  if (!hasTauriRuntime()) return Promise.resolve(noopUnlisten);
+  return listen<T>(eventName, event => handler(event.payload));
+}
+
 export function onSessionEvent(handler: (event: SessionEvent) => void): Promise<UnlistenFn> {
-  return listen<SessionEvent>("session-event", event => handler(event.payload));
+  return safeListen<SessionEvent>("session-event", handler);
 }
 
 export function onSessionWarning(handler: (message: string) => void): Promise<UnlistenFn> {
-  return listen<{ message: string }>("session-warning", event => handler(event.payload.message));
+  return safeListen<{ message: string }>("session-warning", payload => handler(payload.message));
 }
 
 export function onTransferEvent(handler: (task: TransferTask) => void): Promise<UnlistenFn> {
-  return listen<TransferTask>("transfer-event", event => handler(event.payload));
+  return safeListen<TransferTask>("transfer-event", handler);
+}
+
+export function onCloseRequested(handler: () => void): Promise<UnlistenFn> {
+  return safeListen<void>("app-close-requested", () => handler());
 }
 
 export const onDragDropEvent = (
   handler: Parameters<ReturnType<typeof getCurrentWebview>["onDragDropEvent"]>[0],
-) => getCurrentWebview().onDragDropEvent(handler);
+) => (hasTauriRuntime() ? getCurrentWebview().onDragDropEvent(handler) : Promise.resolve(noopUnlisten));

@@ -849,6 +849,31 @@
   color: var(--accent-bright);
 }
 
+.update-status-pill {
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.update-status-pill:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.update-status-pill.has-update {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+}
+
 .local-shells-strip {
   display: flex;
   flex-direction: column;
@@ -906,6 +931,17 @@
   color: var(--text-primary);
 }
 
+.local-admin-toggle.is-ask {
+  border-color: var(--accent-border);
+  color: var(--text-secondary);
+}
+
+.local-admin-toggle.is-standard {
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+.local-admin-toggle.is-admin,
 .local-admin-toggle.active {
   border-color: color-mix(in srgb, var(--warn) 48%, var(--border));
   background: color-mix(in srgb, var(--warn) 14%, var(--bg-card));

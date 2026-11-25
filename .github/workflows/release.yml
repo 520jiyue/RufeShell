@@ -24,18 +24,23 @@ jobs:
           - name: Windows x64
             runner: windows-latest
             target: x86_64-pc-windows-msvc
+            assetPlatform: windows
           - name: Windows ARM64
             runner: windows-latest
             target: aarch64-pc-windows-msvc
+            assetPlatform: windows
           - name: Linux x64
             runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            assetPlatform: Linux
           - name: macOS Apple Silicon
             runner: macos-latest
             target: aarch64-apple-darwin
+            assetPlatform: darwin
           - name: macOS Intel
             runner: macos-15-intel
             target: x86_64-apple-darwin
+            assetPlatform: darwin
 
     steps:
       - name: Check out source
@@ -70,6 +75,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
           releaseName: RufeShell v__VERSION__
@@ -85,6 +92,8 @@ jobs:
             RufeShell 是基于 Rust 与 Tauri 的现代化 SSH 与本地终端工作台。Windows 安装包支持直接安装；macOS 请根据芯片选择对应版本。
           releaseDraft: false
           prerelease: false
+          releaseAssetNamePattern: RufeShell_v[version]_${{ matrix.assetPlatform }}_[arch][setup][ext]
+          updaterJsonPreferNsis: true
           args: --target ${{ matrix.target }} ${{ matrix.runner == 'ubuntu-22.04' && '--bundles appimage,deb,rpm' || '' }}
           retryAttempts: 2
 

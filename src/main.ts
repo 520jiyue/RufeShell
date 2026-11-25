@@ -5,10 +5,10 @@ import "./styles/session.css";
 import "./styles/dialogs.css";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { api, friendlyError } from "./api.ts";
-import { onLanguageChange, t } from "./i18n/index.ts";
+import { api, friendlyError, onCloseRequested } from "./api.ts";
+import { getLanguage, onLanguageChange, t } from "./i18n/index.ts";
 import { icon } from "./icons.ts";
-import { getActiveSession, loadWorkbenchState, state } from "./state.ts";
+import { flushWorkbenchState, getActiveSession, loadWorkbenchState, state } from "./state.ts";
 import { $, notify } from "./utils.ts";
 import { mountShell } from "./ui/shell.ts";
 import { initDialogs, openConnectionDialog } from "./ui/dialogs.ts";
@@ -48,9 +48,47 @@ import {
 import { initSettingsUI, openMetricsSettingsDialog, openSettingsDialog } from "./ui/settings.ts";
 import { initCustomSelects } from "./ui/selects.ts";
 import { initShortcuts, openShortcutsDialog } from "./ui/shortcuts.ts";
+import { initUpdaterUI } from "./ui/updater.ts";
+
+function openCloseConfirmDialog(): void {
+  const dialog = $<HTMLDialogElement>("#close-confirm-dialog");
+  if (dialog.open) return;
+  $<HTMLInputElement>("#close-confirm-remember").checked = false;
+  dialog.showModal();
+}
+
+async function executeCloseAction(
+  action: "tray" | "exit",
+  remember: boolean,
+  win?: ReturnType<typeof getCurrentWindow>,
+): Promise<void> {
+  if (remember) {
+    state.workbench.settings.close_action = action;
+    await flushWorkbenchState();
+  }
+  const dialog = $<HTMLDialogElement>("#close-confirm-dialog");
+  if (dialog.open) dialog.close();
+
+  if (action === "tray") {
+    try {
+      await api.hideToTray();
+    } catch {
+      await win?.minimize().catch(() => undefined);
+      notify(t("closeDialog.minimizedToast"));
+    }
+    return;
+  }
+
+  try {
+    await api.exitApp();
+  } catch {
+    await win?.close().catch(() => undefined);
+  }
+}
 
 function initWindowControls(): void {
   const maxBtn = $<HTMLButtonElement>("#win-maximize");
+  let appWindow: ReturnType<typeof getCurrentWindow> | undefined;
 
   const syncMaxIcon = async (win: ReturnType<typeof getCurrentWindow>) => {
     try {
@@ -64,6 +102,7 @@ function initWindowControls(): void {
 
   try {
     const win = getCurrentWindow();
+    appWindow = win;
     void syncMaxIcon(win);
 
     $("#win-minimize").addEventListener("click", () => {
@@ -72,15 +111,32 @@ function initWindowControls(): void {
     maxBtn.addEventListener("click", () => {
       void win.toggleMaximize().then(() => syncMaxIcon(win)).catch(() => undefined);
     });
-    $("#win-close").addEventListener("click", () => {
-      void win.close().catch(() => undefined);
-    });
     $("#titlebar-drag-spacer").addEventListener("dblclick", () => {
       void win.toggleMaximize().then(() => syncMaxIcon(win)).catch(() => undefined);
     });
+    void onCloseRequested(() => openCloseConfirmDialog()).catch(() => undefined);
   } catch {
     // Non-Tauri browser preview
   }
+
+  $("#win-close").addEventListener("click", () => {
+    const mode = state.workbench.settings.close_action;
+    if (mode === "tray" || mode === "exit") {
+      void executeCloseAction(mode, false, appWindow);
+      return;
+    }
+    openCloseConfirmDialog();
+  });
+
+  $("#close-action-tray").addEventListener("click", () => {
+    const remember = $<HTMLInputElement>("#close-confirm-remember").checked;
+    void executeCloseAction("tray", remember, appWindow);
+  });
+
+  $("#close-action-exit").addEventListener("click", () => {
+    const remember = $<HTMLInputElement>("#close-confirm-remember").checked;
+    void executeCloseAction("exit", remember, appWindow);
+  });
 }
 
 function syncAdminLaunchButton(): void {
@@ -114,11 +170,10 @@ function initAdminLaunchControls(): void {
       return;
     }
     const activeCount = state.sessions.size;
-    if (activeCount === 0) {
-      triggerAdminRelaunch();
-      return;
-    }
-    $("#relaunch-admin-desc").textContent = t("titlebar.adminRelaunchDesc", { count: activeCount });
+    $("#relaunch-admin-desc").textContent =
+      activeCount > 0
+        ? t("titlebar.adminRelaunchDesc", { count: activeCount })
+        : t("titlebar.adminRelaunchZeroDesc");
     $<HTMLDialogElement>("#relaunch-admin-dialog").showModal();
   });
 
@@ -133,6 +188,8 @@ initCustomSelects();
 initWindowControls();
 initAdminLaunchControls();
 await loadWorkbenchState();
+void api.syncTrayLanguage(getLanguage()).catch(() => undefined);
+onLanguageChange(() => void api.syncTrayLanguage(getLanguage()).catch(() => undefined));
 
 initDialogs({
   onConnectionSaved: renderConnections,
@@ -161,6 +218,7 @@ initHistoryUI();
 initSnippetsUI();
 initTerminalTools();
 initSettingsUI();
+initUpdaterUI();
 
 $("#welcome-shortcuts").addEventListener("click", openShortcutsDialog);
 $("#quick-history-open").addEventListener("click", openHistoryDialog);

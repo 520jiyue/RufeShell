@@ -94,9 +94,14 @@ export interface AlertLogEntry {
 }
 
 export type LanguageId = "zh-CN" | "en";
+export type CloseAction = "ask" | "tray" | "exit";
+export type LocalShellPrivilege = "ask" | "standard" | "admin";
 
 export interface TerminalSettings {
   language: LanguageId | string;
+  close_action: CloseAction | string;
+  local_shell_privilege: LocalShellPrivilege | string;
+  auto_check_updates: boolean;
   font_family: string;
   font_size: number;
   theme: TerminalThemeId | string;

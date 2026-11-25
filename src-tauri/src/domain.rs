@@ -231,6 +231,9 @@ impl Default for AlertRule {
 #[serde(default)]
 pub struct TerminalSettings {
     pub language: String,
+    pub close_action: String,
+    pub local_shell_privilege: String,
+    pub auto_check_updates: bool,
     pub font_family: String,
     pub font_size: u16,
     pub theme: String,
@@ -254,6 +257,9 @@ impl Default for TerminalSettings {
     fn default() -> Self {
         Self {
             language: "zh-CN".into(),
+            close_action: "ask".into(),
+            local_shell_privilege: "ask".into(),
+            auto_check_updates: true,
             font_family: "\"Cascadia Mono\", Consolas, monospace".into(),
             font_size: 14,
             theme: "obsidian-emerald".into(),
@@ -593,5 +599,16 @@ mod tests {
         assert!(AppError::AuthenticationFailed
             .to_string()
             .contains("重新输入"));
+    }
+
+    #[test]
+    fn settings_deserialize_defaults_for_new_fields() {
+        let legacy = r#"{"language":"en","font_size":15}"#;
+        let parsed: TerminalSettings = serde_json::from_str(legacy).unwrap();
+        assert_eq!(parsed.language, "en");
+        assert_eq!(parsed.font_size, 15);
+        assert_eq!(parsed.close_action, "ask");
+        assert_eq!(parsed.local_shell_privilege, "ask");
+        assert!(parsed.auto_check_updates);
     }
 }

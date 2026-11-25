@@ -25,7 +25,11 @@ pub use sessions::{
     SessionManager,
 };
 use store::{Store, WorkbenchStore};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Manager, State, WindowEvent,
+};
 use transfers::TransferManager;
 
 #[cfg(target_os = "windows")]
@@ -70,6 +74,67 @@ pub fn credential_round_trip_test(id: &str, password: &str) -> Result<(), AppErr
     }
 }
 
+struct TrayMenuHandles {
+    show: MenuItem<tauri::Wry>,
+    quit: MenuItem<tauri::Wry>,
+}
+
+fn tray_menu_labels(language: &str) -> (&'static str, &'static str) {
+    if language.trim().to_ascii_lowercase().starts_with("en") {
+        ("Show RufeShell", "Quit RufeShell")
+    } else {
+        ("显示 RufeShell", "退出 RufeShell")
+    }
+}
+
+fn restore_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn setup_system_tray(app: &tauri::App, language: &str) -> tauri::Result<()> {
+    let (show_label, quit_label) = tray_menu_labels(language);
+    let show_item = MenuItem::with_id(app, "tray-show", show_label, true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "tray-quit", quit_label, true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+    let mut builder = TrayIconBuilder::with_id("main-tray")
+        .menu(&menu)
+        .tooltip("RufeShell")
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "tray-show" => restore_main_window(app),
+            "tray-quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                restore_main_window(tray.app_handle());
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+
+    if let Ok(mut guard) = app.state::<AppState>().tray_items.lock() {
+        *guard = Some(TrayMenuHandles {
+            show: show_item,
+            quit: quit_item,
+        });
+    }
+    Ok(())
+}
+
 struct AppState {
     store: Store,
     workbench: WorkbenchStore,
@@ -78,6 +143,7 @@ struct AppState {
     local_pty: LocalPtyManager,
     transfers: TransferManager,
     forwards: ForwardManager,
+    tray_items: std::sync::Mutex<Option<TrayMenuHandles>>,
 }
 
 #[tauri::command]
@@ -398,6 +464,34 @@ async fn relaunch_as_admin(app: AppHandle) -> Result<(), AppError> {
 #[tauri::command]
 async fn open_elevated_local_terminal(kind: LocalShellKind) -> Result<(), AppError> {
     local_pty::spawn_elevated_shell(kind)
+}
+
+#[tauri::command]
+fn hide_to_tray(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+}
+
+#[tauri::command]
+fn exit_app(app: AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
+fn sync_tray_language(language: String, state: State<'_, AppState>) {
+    let (show_label, quit_label) = tray_menu_labels(&language);
+    if let Ok(guard) = state.tray_items.lock() {
+        if let Some(handles) = guard.as_ref() {
+            let _ = handles.show.set_text(show_label);
+            let _ = handles.quit.set_text(quit_label);
+        }
+    }
+}
+
+#[tauri::command]
+fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
 }
 
 #[tauri::command]
@@ -846,12 +940,46 @@ pub fn run() {
     let store = Store::open(data_dir.clone()).expect("无法初始化本地连接数据库");
     let workbench = WorkbenchStore::open(data_dir.clone()).expect("无法初始化工作台配置数据库");
     let host_keys = HostKeyStore::open(data_dir).expect("无法初始化主机密钥数据库");
+    let initial_language = workbench
+        .load()
+        .map(|wb| wb.settings.language)
+        .unwrap_or_else(|_| "zh-CN".into());
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .setup(|_app| {
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .setup(move |app| {
             #[cfg(target_os = "windows")]
-            hide_frameless_window_border(_app);
+            hide_frameless_window_border(app);
+            setup_system_tray(app, &initial_language)?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    let close_action = window
+                        .app_handle()
+                        .state::<AppState>()
+                        .workbench
+                        .load()
+                        .map(|wb| wb.settings.close_action)
+                        .unwrap_or_else(|_| "ask".into());
+                    match close_action.as_str() {
+                        "tray" => {
+                            api.prevent_close();
+                            let _ = window.hide();
+                        }
+                        "exit" => {}
+                        _ => {
+                            api.prevent_close();
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                            let _ = window.emit("app-close-requested", ());
+                        }
+                    }
+                }
+            }
         })
         .manage(AppState {
             store,
@@ -861,6 +989,7 @@ pub fn run() {
             local_pty: LocalPtyManager::new(),
             transfers: TransferManager::new(),
             forwards: ForwardManager::new(),
+            tray_items: std::sync::Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             list_connections,
@@ -879,6 +1008,10 @@ pub fn run() {
             is_elevated,
             relaunch_as_admin,
             open_elevated_local_terminal,
+            hide_to_tray,
+            exit_app,
+            sync_tray_language,
+            app_version,
             open_local_terminal,
             session_status,
             terminal_input,

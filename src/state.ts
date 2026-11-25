@@ -54,6 +54,9 @@ export function defaultAlertRules(): AlertRule[] {
 export function defaultSettings(): TerminalSettings {
   return {
     language: "zh-CN",
+    close_action: "ask",
+    local_shell_privilege: "ask",
+    auto_check_updates: true,
     font_family: '"Cascadia Mono", Consolas, monospace',
     font_size: 14,
     theme: "obsidian-emerald",
@@ -133,7 +136,6 @@ export interface AppState {
   connectionSort: ConnectionSortMode;
   sidebarCollapsed: boolean;
   isElevated: boolean;
-  localShellAdmin: boolean;
   busy: boolean;
   connecting: boolean;
   discoveredHost: DiscoveredHost | null;
@@ -163,7 +165,6 @@ export const state: AppState = {
   connectionSort: "favorite",
   sidebarCollapsed: false,
   isElevated: false,
-  localShellAdmin: false,
   busy: false,
   connecting: false,
   discoveredHost: null,
@@ -207,6 +208,14 @@ export function persistWorkbenchState(): Promise<void> {
       void api.saveWorkbenchState(state.workbench).catch(() => undefined).finally(resolve);
     }, 120);
   });
+}
+
+export async function flushWorkbenchState(): Promise<void> {
+  if (persistTimer !== undefined) {
+    window.clearTimeout(persistTimer);
+    persistTimer = undefined;
+  }
+  await api.saveWorkbenchState(state.workbench).catch(() => undefined);
 }
 
 export async function loadWorkbenchState(): Promise<void> {

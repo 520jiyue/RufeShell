@@ -1,9 +1,12 @@
+import { api } from "../api.ts";
 import { LANGUAGE_OPTIONS, onLanguageChange, setLanguage, t } from "../i18n/index.ts";
 import { getActiveSession, persistWorkbenchState, state } from "../state.ts";
 import { applyAppTheme, FONT_PRESETS, getFontLabel, getThemeLabel, TERMINAL_THEMES } from "../themes.ts";
 import { $, escapeHtml, notify } from "../utils.ts";
+import { syncLocalAdminToggle } from "./connections.ts";
 import { fetchAndRenderMetrics, restartAllMetricsTimers } from "./metrics.ts";
 import { applySettingsToAllTerminals } from "./terminalTools.ts";
+import { openUpdaterDialog } from "./updater.ts";
 
 let themeBeforeOpen = "";
 let languageBeforeOpen = "";
@@ -33,6 +36,32 @@ function populateSettingsSelects(): void {
     item => `<option value="${item.id}">${escapeHtml(getThemeLabel(item))}</option>`,
   ).join("");
   themeSelect.value = currentTheme;
+
+  const closeActionSelect = $<HTMLSelectElement>("#setting-close-action");
+  const currentCloseAction = closeActionSelect.value || s.close_action || "ask";
+  closeActionSelect.innerHTML = [
+    { value: "ask", label: t("settings.closeAsk") },
+    { value: "tray", label: t("settings.closeTray") },
+    { value: "exit", label: t("settings.closeExit") },
+  ]
+    .map(item => `<option value="${item.value}">${escapeHtml(item.label)}</option>`)
+    .join("");
+  closeActionSelect.value = ["ask", "tray", "exit"].includes(currentCloseAction)
+    ? currentCloseAction
+    : "ask";
+
+  const localPrivilegeSelect = $<HTMLSelectElement>("#setting-local-privilege");
+  const currentPrivilege = localPrivilegeSelect.value || s.local_shell_privilege || "ask";
+  localPrivilegeSelect.innerHTML = [
+    { value: "ask", label: t("settings.privAsk") },
+    { value: "standard", label: t("settings.privStandard") },
+    { value: "admin", label: t("settings.privAdmin") },
+  ]
+    .map(item => `<option value="${item.value}">${escapeHtml(item.label)}</option>`)
+    .join("");
+  localPrivilegeSelect.value = ["ask", "standard", "admin"].includes(currentPrivilege)
+    ? currentPrivilege
+    : "ask";
 }
 
 export function openSettingsDialog(): void {
@@ -43,6 +72,8 @@ export function openSettingsDialog(): void {
   $<HTMLSelectElement>("#setting-language").value = "";
   $<HTMLSelectElement>("#setting-font-family").value = "";
   $<HTMLSelectElement>("#setting-theme").value = "";
+  $<HTMLSelectElement>("#setting-close-action").value = "";
+  $<HTMLSelectElement>("#setting-local-privilege").value = "";
   populateSettingsSelects();
 
   $<HTMLInputElement>("#setting-font-size").value = String(s.font_size);
@@ -53,6 +84,7 @@ export function openSettingsDialog(): void {
   $<HTMLInputElement>("#setting-connect-timeout").value = String(s.connect_timeout_secs);
   $<HTMLInputElement>("#setting-edit-backup").checked = s.create_backup_on_edit;
   $<HTMLInputElement>("#setting-transfer-checksum").checked = s.verify_transfer_checksum;
+  $<HTMLInputElement>("#setting-auto-updates").checked = s.auto_check_updates ?? true;
 
   $<HTMLDialogElement>("#settings-dialog").showModal();
 }
@@ -86,6 +118,7 @@ export function adjustTerminalFontSize(delta: number): void {
 
 export function initSettingsUI(): void {
   $("#open-settings").addEventListener("click", openSettingsDialog);
+  $("#settings-check-update-btn").addEventListener("click", () => openUpdaterDialog(true));
 
   const dialog = $<HTMLDialogElement>("#settings-dialog");
   const metricsDialog = $<HTMLDialogElement>("#metrics-settings-dialog");
@@ -122,6 +155,8 @@ export function initSettingsUI(): void {
     state.workbench.settings = {
       ...state.workbench.settings,
       language: nextLang,
+      close_action: $<HTMLSelectElement>("#setting-close-action").value || "ask",
+      local_shell_privilege: $<HTMLSelectElement>("#setting-local-privilege").value || "ask",
       font_family: $<HTMLSelectElement>("#setting-font-family").value,
       font_size: Math.max(11, Math.min(24, Number($<HTMLInputElement>("#setting-font-size").value) || 14)),
       theme: themeSelect.value,
@@ -132,11 +167,14 @@ export function initSettingsUI(): void {
       connect_timeout_secs: Math.max(3, Math.min(120, Number($<HTMLInputElement>("#setting-connect-timeout").value) || 15)),
       create_backup_on_edit: $<HTMLInputElement>("#setting-edit-backup").checked,
       verify_transfer_checksum: $<HTMLInputElement>("#setting-transfer-checksum").checked,
+      auto_check_updates: $<HTMLInputElement>("#setting-auto-updates").checked,
     };
 
     themeBeforeOpen = state.workbench.settings.theme;
     languageBeforeOpen = nextLang;
     setLanguage(nextLang, true);
+    void api.syncTrayLanguage(nextLang).catch(() => undefined);
+    syncLocalAdminToggle();
     applySettingsToAllTerminals();
     void persistWorkbenchState();
     dialog.close();
