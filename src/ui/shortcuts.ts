@@ -1,3 +1,4 @@
+import { onLanguageChange, t, type TranslationKey } from "../i18n/index.ts";
 import { $ } from "../utils.ts";
 
 export interface ShortcutHandlers {
@@ -16,50 +17,58 @@ export interface ShortcutHandlers {
   handleSnippetShortcut: (event: KeyboardEvent) => boolean;
 }
 
-const SHORTCUT_ITEMS = [
-  { group: "连接与工作台", keys: "Ctrl + N", desc: "新建服务器连接" },
-  { group: "连接与工作台", keys: "Ctrl + B", desc: "收起 / 展开左侧连接栏" },
-  { group: "连接与工作台", keys: "Ctrl + ,", desc: "打开工作台与终端设置" },
-  { group: "连接与工作台", keys: "F1 或 Ctrl + /", desc: "打开快捷键说明" },
-  { group: "会话标签", keys: "Ctrl + W", desc: "关闭当前会话标签" },
-  { group: "会话标签", keys: "Ctrl + Tab", desc: "切换到下一个会话" },
-  { group: "会话标签", keys: "Ctrl + Shift + Tab", desc: "切换到上一个会话" },
-  { group: "会话标签", keys: "Ctrl + 1 ~ 9", desc: "跳转到第 N 个会话标签" },
-  { group: "终端与面板", keys: "Ctrl + F", desc: "搜索当前终端输出" },
-  { group: "终端与面板", keys: "Ctrl + Shift + L", desc: "清空当前终端屏幕" },
-  { group: "终端与面板", keys: "Ctrl + Shift + C / V", desc: "复制选中文本 / 粘贴剪贴板" },
-  { group: "终端与面板", keys: "Ctrl + = / -", desc: "放大 / 缩小终端字号" },
-  { group: "终端与面板", keys: "Ctrl + E", desc: "显示 / 隐藏右侧 SFTP 文件面板" },
-  { group: "终端与面板", keys: "Ctrl + M", desc: "显示 / 隐藏左侧主机遥测面板" },
-  { group: "指令与收藏", keys: "Ctrl + H", desc: "打开历史指令记录（支持方向键搜索）" },
-  { group: "指令与收藏", keys: "Ctrl + K", desc: "打开常用命令收藏面板" },
-  { group: "指令与收藏", keys: "Alt + 1 ~ 9", desc: "快速触发对应快捷键的收藏命令" },
-  { group: "指令与收藏", keys: "↑ / ↓（命令栏内）", desc: "浏览历史指令并回车发送" },
+const SHORTCUT_ITEMS: { groupKey: TranslationKey; keys: string; descKey: TranslationKey }[] = [
+  { groupKey: "shortcuts.groupWorkbench", keys: "Ctrl + N", descKey: "shortcuts.newConn" },
+  { groupKey: "shortcuts.groupWorkbench", keys: "Ctrl + B", descKey: "shortcuts.toggleSidebar" },
+  { groupKey: "shortcuts.groupWorkbench", keys: "Ctrl + ,", descKey: "shortcuts.openSettings" },
+  { groupKey: "shortcuts.groupWorkbench", keys: "F1 / Ctrl + /", descKey: "shortcuts.openShortcuts" },
+  { groupKey: "shortcuts.groupTabs", keys: "Ctrl + W", descKey: "shortcuts.closeTab" },
+  { groupKey: "shortcuts.groupTabs", keys: "Ctrl + Tab", descKey: "shortcuts.nextTab" },
+  { groupKey: "shortcuts.groupTabs", keys: "Ctrl + Shift + Tab", descKey: "shortcuts.prevTab" },
+  { groupKey: "shortcuts.groupTabs", keys: "Ctrl + 1 ~ 9", descKey: "shortcuts.jumpTab" },
+  { groupKey: "shortcuts.groupTerminal", keys: "Ctrl + F", descKey: "shortcuts.searchOutput" },
+  { groupKey: "shortcuts.groupTerminal", keys: "Ctrl + Shift + L", descKey: "shortcuts.clearTerm" },
+  { groupKey: "shortcuts.groupTerminal", keys: "Ctrl + Shift + C / V", descKey: "shortcuts.copyPaste" },
+  { groupKey: "shortcuts.groupTerminal", keys: "Ctrl + = / -", descKey: "shortcuts.fontSize" },
+  { groupKey: "shortcuts.groupTerminal", keys: "Ctrl + E", descKey: "shortcuts.toggleFiles" },
+  { groupKey: "shortcuts.groupTerminal", keys: "Ctrl + M", descKey: "shortcuts.toggleMetrics" },
+  { groupKey: "shortcuts.groupCommands", keys: "Ctrl + H", descKey: "shortcuts.openHistory" },
+  { groupKey: "shortcuts.groupCommands", keys: "Ctrl + K", descKey: "shortcuts.openSnippets" },
+  { groupKey: "shortcuts.groupCommands", keys: "Alt + 1 ~ 9", descKey: "shortcuts.triggerSnippet" },
+  { groupKey: "shortcuts.groupCommands", keys: "↑ / ↓", descKey: "shortcuts.quickHistory" },
 ];
 
-export function openShortcutsDialog(): void {
-  const groups = [...new Set(SHORTCUT_ITEMS.map(item => item.group))];
+function renderShortcutsBody(): void {
+  const groups = [...new Set(SHORTCUT_ITEMS.map(item => item.groupKey))];
   $("#shortcuts-body").innerHTML = groups
-    .map(group => {
-      const rows = SHORTCUT_ITEMS.filter(item => item.group === group)
+    .map(groupKey => {
+      const rows = SHORTCUT_ITEMS.filter(item => item.groupKey === groupKey)
         .map(
           item => `
             <div class="shortcut-row">
-              <span>${item.desc}</span>
+              <span>${t(item.descKey)}</span>
               <kbd class="keycap">${item.keys}</kbd>
             </div>
           `,
         )
         .join("");
-      return `<section class="shortcut-group"><h3>${group}</h3>${rows}</section>`;
+      return `<section class="shortcut-group"><h3>${t(groupKey)}</h3>${rows}</section>`;
     })
     .join("");
+}
 
+export function openShortcutsDialog(): void {
+  renderShortcutsBody();
   $<HTMLDialogElement>("#shortcuts-dialog").showModal();
 }
 
 export function initShortcuts(handlers: ShortcutHandlers): void {
   $("#open-shortcuts").addEventListener("click", openShortcutsDialog);
+  onLanguageChange(() => {
+    if ($<HTMLDialogElement>("#shortcuts-dialog").open) {
+      renderShortcutsBody();
+    }
+  });
 
   document.addEventListener("keydown", event => {
     const anyModalOpen = Boolean(document.querySelector("dialog[open]"));

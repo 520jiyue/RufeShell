@@ -1,4 +1,5 @@
 import { api, friendlyError } from "../api.ts";
+import { formatLocaleClock, onLanguageChange, t } from "../i18n/index.ts";
 import { icon } from "../icons.ts";
 import { getActiveSession, persistWorkbenchState, state } from "../state.ts";
 import type { Session, SystemMetrics } from "../types.ts";
@@ -7,6 +8,10 @@ import { refreshTrendsIfVisible } from "./ops.ts";
 
 let sparklineUid = 0;
 let onOpenCustomize: () => void = () => {};
+const lastRenderCache = new WeakMap<
+  Session,
+  { metrics: SystemMetrics; cpuValues: number[]; rxRate: number; txRate: number }
+>();
 
 export function setMetricsCustomizeHandler(handler: () => void): void {
   onOpenCustomize = handler;
@@ -97,7 +102,7 @@ function renderMetricsHtml(
   txRate: number,
 ): string {
   const { metrics_visible: vis, metrics_process_limit: procLimit } = state.workbench.settings;
-  const cpuValue = metrics.cpu_percent === null ? "采样中" : `${metrics.cpu_percent.toFixed(1)}%`;
+  const cpuValue = metrics.cpu_percent === null ? t("metrics.sampling") : `${metrics.cpu_percent.toFixed(1)}%`;
 
   const loadChips = metrics.load_average
     .map(value => `<span class="load-chip">${value.toFixed(2)}</span>`)
@@ -105,7 +110,7 @@ function renderMetricsHtml(
 
   const hostGroup = renderCollapsibleGroup(
     "host",
-    "主机概览",
+    t("metrics.hostGroup"),
     `
       <div class="host-summary">
         <div class="host-summary-top">
@@ -114,7 +119,7 @@ function renderMetricsHtml(
         </div>
         <small>${escapeHtml(metrics.system)}</small>
         <div class="load-summary">
-          <span>负载</span>
+          <span>${t("metrics.load")}</span>
           <div class="load-chips">${loadChips}</div>
         </div>
       </div>
@@ -131,7 +136,7 @@ function renderMetricsHtml(
   if (vis.memory) {
     memSwap.push(
       renderMetricCard(
-        "内存",
+        t("metrics.memory"),
         `${metrics.memory_percent.toFixed(1)}%`,
         metrics.memory_percent,
         `${formatBytes(metrics.memory_used)} / ${formatBytes(metrics.memory_total)}`,
@@ -141,7 +146,7 @@ function renderMetricsHtml(
   if (vis.swap) {
     memSwap.push(
       renderMetricCard(
-        "交换",
+        t("metrics.swap"),
         `${metrics.swap_percent.toFixed(1)}%`,
         metrics.swap_percent,
         `${formatBytes(metrics.swap_used)} / ${formatBytes(metrics.swap_total)}`,
@@ -152,21 +157,21 @@ function renderMetricsHtml(
     computeCards.push(`<div class="metric-grid">${memSwap.join("")}</div>`);
   }
   const computeGroup = computeCards.length
-    ? renderCollapsibleGroup("compute", "算力与内存", computeCards.join(""))
+    ? renderCollapsibleGroup("compute", t("metrics.computeGroup"), computeCards.join(""))
     : "";
 
   const networkGroup = vis.network
     ? renderCollapsibleGroup(
         "network",
-        "网络速率",
+        t("metrics.networkGroup"),
         `
           <div class="network-summary">
             <div class="net-tile rx">
-              <span>↓ 接收</span>
+              <span>${t("metrics.rx")}</span>
               <strong>${formatBytes(rxRate)}/s</strong>
             </div>
             <div class="net-tile tx">
-              <span>↑ 发送</span>
+              <span>${t("metrics.tx")}</span>
               <strong>${formatBytes(txRate)}/s</strong>
             </div>
           </div>
@@ -178,7 +183,7 @@ function renderMetricsHtml(
   if (vis.disk) {
     storageItems.push(
       renderMetricCard(
-        "根目录 /",
+        t("metrics.rootDisk"),
         `${metrics.disk_percent.toFixed(1)}%`,
         metrics.disk_percent,
         `${formatBytes(metrics.disk_used)} / ${formatBytes(metrics.disk_total)}`,
@@ -203,14 +208,14 @@ function renderMetricsHtml(
     storageItems.push(`<div class="metrics-list-box">${mountsHtml}</div>`);
   }
   const storageGroup = storageItems.length
-    ? renderCollapsibleGroup("storage", "挂载点与磁盘", storageItems.join(""))
+    ? renderCollapsibleGroup("storage", t("metrics.storageGroup"), storageItems.join(""))
     : "";
 
   const processesGroup =
     vis.processes && metrics.processes.length
       ? renderCollapsibleGroup(
           "processes",
-          `进程 (${Math.min(procLimit, metrics.processes.length)})`,
+          t("metrics.processesGroup", { count: Math.min(procLimit, metrics.processes.length) }),
           `<div class="metrics-list-box">${metrics.processes
             .slice(0, procLimit)
             .map(
@@ -232,13 +237,13 @@ function renderMetricsHtml(
     ${networkGroup}
     ${storageGroup}
     ${processesGroup}
-    <div class="metrics-updated">更新于 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}</div>
+    <div class="metrics-updated">${t("metrics.updatedAt", { time: formatLocaleClock() })}</div>
   `;
 }
 
 function updateMetricsFooter(): void {
   const sec = state.workbench.settings.metrics_interval_secs;
-  $("#metrics-foot").textContent = `${sec} 秒采样 · 复用独立监控通道`;
+  $("#metrics-foot").textContent = t("metrics.foot", { sec });
 }
 
 export async function fetchAndRenderMetrics(session: Session): Promise<void> {
@@ -269,6 +274,7 @@ export async function fetchAndRenderMetrics(session: Session): Promise<void> {
       : 0;
 
     const scrollTop = session.metricsElement.scrollTop;
+    lastRenderCache.set(session, { metrics, cpuValues: trimmedCpu, rxRate: received, txRate: sent });
     session.metricsElement.innerHTML = renderMetricsHtml(metrics, trimmedCpu, received, sent);
     session.metricsElement.scrollTop = scrollTop;
     updateMetricsFooter();
@@ -310,12 +316,12 @@ export async function fetchAndRenderMetrics(session: Session): Promise<void> {
       const existing = session.metricsElement.querySelector(".metrics-refresh-error");
       const notice = existing ?? document.createElement("p");
       notice.className = "metrics-refresh-error";
-      notice.textContent = `本次刷新失败，将自动重试：${message}`;
+      notice.textContent = t("metrics.refreshError", { msg: message });
       if (!existing) session.metricsElement.prepend(notice);
     } else {
       session.metricsElement.innerHTML = `
         <p class="metrics-placeholder">${escapeHtml(message)}</p>
-        <button class="subtle retry-metrics" type="button">重试</button>
+        <button class="subtle retry-metrics" type="button">${escapeHtml(t("common.retry"))}</button>
       `;
       session.metricsElement
         .querySelector(".retry-metrics")
@@ -358,13 +364,21 @@ function evaluateAlertRules(session: Session, metrics: SystemMetrics): void {
 
     const label =
       rule.metric === "cpu"
-        ? "CPU"
+        ? t("metrics.metricCpu")
         : rule.metric === "memory"
-          ? "内存"
+          ? t("metrics.metricMem")
           : rule.metric === "swap"
-            ? "交换分区"
-            : "根目录磁盘";
-    notify(`告警：${session.profile.name} ${label} 达到 ${value.toFixed(1)}%（阈值 ${rule.threshold}%）`, true);
+            ? t("metrics.metricSwap")
+            : t("metrics.metricDisk");
+    notify(
+      t("metrics.alertNotify", {
+        server: session.profile.name,
+        metric: label,
+        value: value.toFixed(1),
+        threshold: rule.threshold,
+      }),
+      true,
+    );
   }
 }
 
@@ -399,6 +413,21 @@ export function initMetricsPanel(): void {
   const toggleBtn = $<HTMLButtonElement>("#toggle-metrics");
 
   updateMetricsFooter();
+  onLanguageChange(() => {
+    updateMetricsFooter();
+    toggleBtn.title = t(panel.classList.contains("hidden") ? "session.showMetrics" : "session.hideMetrics");
+    for (const session of state.sessions.values()) {
+      const cached = lastRenderCache.get(session);
+      if (cached) {
+        session.metricsElement.innerHTML = renderMetricsHtml(
+          cached.metrics,
+          cached.cpuValues,
+          cached.rxRate,
+          cached.txRate,
+        );
+      }
+    }
+  });
 
   $("#metrics-customize-btn").addEventListener("click", () => onOpenCustomize());
 
@@ -414,7 +443,7 @@ export function initMetricsPanel(): void {
     const hidden = panel.classList.toggle("hidden");
     resizer.classList.toggle("hidden", hidden);
     toggleBtn.classList.toggle("active", !hidden);
-    toggleBtn.title = hidden ? "显示资源面板 (Ctrl+M)" : "隐藏资源面板 (Ctrl+M)";
+    toggleBtn.title = t(hidden ? "session.showMetrics" : "session.hideMetrics");
     const session = getActiveSession();
     if (session) requestAnimationFrame(() => session.fit.fit());
   });

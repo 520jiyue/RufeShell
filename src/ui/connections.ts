@@ -1,4 +1,5 @@
 import { api, dialogs, friendlyError } from "../api.ts";
+import { onLanguageChange, t } from "../i18n/index.ts";
 import { icon } from "../icons.ts";
 import {
   getActiveSession,
@@ -63,8 +64,8 @@ function renderWelcomeRecents(): void {
   container.classList.remove("hidden");
   container.innerHTML = `
     <div class="welcome-recents-head">
-      <span>快速连接</span>
-      <small>${state.connections.size} 台已保存主机</small>
+      <span>${t("welcome.quickConnect")}</span>
+      <small>${t("welcome.savedCount", { count: state.connections.size })}</small>
     </div>
     <div class="welcome-recents-grid">
       ${profiles
@@ -77,7 +78,7 @@ function renderWelcomeRecents(): void {
                 <strong>${meta.favorite ? "★ " : ""}${escapeHtml(profile.name)}</strong>
                 <small>${escapeHtml(profile.username)}@${escapeHtml(profile.host)}:${profile.port}</small>
               </span>
-              <span class="auth-chip">${profile.auth === "private_key" ? "私钥" : "密码"}</span>
+              <span class="auth-chip">${profile.auth === "private_key" ? t("welcome.authKey") : t("welcome.authPwd")}</span>
             </button>
           `;
         })
@@ -93,7 +94,7 @@ export function renderConnections(): void {
   const groups = getAllGroups();
   const prevFilter = state.connectionGroupFilter;
   groupSelect.innerHTML =
-    '<option value="all">全部分组</option><option value="favorites">★ 仅收藏</option>' +
+    `<option value="all">${escapeHtml(t("sidebar.allGroups"))}</option><option value="favorites">${escapeHtml(t("sidebar.onlyFavorites"))}</option>` +
     groups.map(group => `<option value="group:${escapeHtml(group)}">${escapeHtml(group)}</option>`).join("");
   if (
     prevFilter === "all" ||
@@ -124,14 +125,12 @@ export function renderConnections(): void {
   const list = sortConnections(filtered);
 
   if (!state.connections.size) {
-    $("#connection-list").innerHTML =
-      '<div class="empty-connections">还没有保存的服务器<br/>点击右上角 + 添加连接</div>';
+    $("#connection-list").innerHTML = `<div class="empty-connections">${t("sidebar.emptyServers")}</div>`;
     return;
   }
 
   if (!list.length) {
-    $("#connection-list").innerHTML =
-      '<div class="empty-connections">没有匹配的连接<br/>尝试更换搜索关键词或分组</div>';
+    $("#connection-list").innerHTML = `<div class="empty-connections">${t("sidebar.noMatchServers")}</div>`;
     return;
   }
 
@@ -140,7 +139,7 @@ export function renderConnections(): void {
       const meta = getConnectionMeta(profile.id);
       const liveStatus = getProfileSessionStatus(profile.id);
       const badge = liveStatus
-        ? `<span class="connection-live-dot ${liveStatus}" title="已有活跃会话"></span>`
+        ? `<span class="connection-live-dot ${liveStatus}" title="${escapeHtml(t("sidebar.liveSession"))}"></span>`
         : "";
       const authTag = profile.auth === "private_key" ? "KEY" : "PWD";
       const tagsHtml = [
@@ -152,7 +151,7 @@ export function renderConnections(): void {
 
       return `
         <article class="connection-card ${liveStatus ? "has-session" : ""}" data-profile="${profile.id}">
-          <button type="button" class="connection-open" title="连接 ${escapeHtml(profile.host)}">
+          <button type="button" class="connection-open" title="${escapeHtml(t("sidebar.connectHost", { host: profile.host }))}">
             <span class="server-icon">${icon("server")}${badge}</span>
             <span class="connection-copy">
               <span class="connection-title-row">
@@ -164,10 +163,10 @@ export function renderConnections(): void {
             </span>
           </button>
           <div class="connection-card-actions">
-            <button type="button" class="icon-button fav-connection ${meta.favorite ? "is-fav" : ""}" title="${meta.favorite ? "取消收藏" : "收藏"}" data-fav="${profile.id}">${icon("star")}</button>
-            <button type="button" class="icon-button edit-connection" title="编辑连接" data-edit="${profile.id}">${icon("edit")}</button>
-            <button type="button" class="icon-button dup-connection" title="复制连接" data-dup="${profile.id}">${icon("copy")}</button>
-            <button type="button" class="icon-button delete-connection" title="删除连接" data-delete="${profile.id}">${icon("trash")}</button>
+            <button type="button" class="icon-button fav-connection ${meta.favorite ? "is-fav" : ""}" title="${escapeHtml(t(meta.favorite ? "sidebar.unfavorite" : "sidebar.favorite"))}" data-fav="${profile.id}">${icon("star")}</button>
+            <button type="button" class="icon-button edit-connection" title="${escapeHtml(t("sidebar.editConn"))}" data-edit="${profile.id}">${icon("edit")}</button>
+            <button type="button" class="icon-button dup-connection" title="${escapeHtml(t("sidebar.dupConn"))}" data-dup="${profile.id}">${icon("copy")}</button>
+            <button type="button" class="icon-button delete-connection" title="${escapeHtml(t("sidebar.delConn"))}" data-delete="${profile.id}">${icon("trash")}</button>
           </div>
         </article>
       `;
@@ -190,7 +189,7 @@ async function startConnection(profile: Connection): Promise<void> {
       state.workbench.settings.connect_timeout_secs;
     const id = await api.connectSaved(profile.id, timeout);
     createSession(id, profile);
-    notify("已快速连接");
+    notify(t("sidebar.quickConnected"));
     return;
   } catch (error) {
     const message = friendlyError(error);
@@ -213,7 +212,7 @@ export function toggleSidebar(): void {
   $("#app-shell").classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
   const toggleBtn = $<HTMLButtonElement>("#toggle-sidebar");
   toggleBtn.classList.toggle("active", !state.sidebarCollapsed);
-  toggleBtn.title = state.sidebarCollapsed ? "展开连接栏 (Ctrl+B)" : "收起连接栏 (Ctrl+B)";
+  toggleBtn.title = t(state.sidebarCollapsed ? "titlebar.expandSidebar" : "titlebar.collapseSidebar");
 
   const session = getActiveSession();
   if (session) {
@@ -231,14 +230,53 @@ export async function loadConnections(): Promise<void> {
   renderConnections();
 }
 
+export function syncLocalAdminToggle(): void {
+  const btn = $<HTMLButtonElement>("#local-admin-toggle");
+  const label = $<HTMLSpanElement>("#local-admin-label");
+  const active = state.isElevated || state.localShellAdmin;
+  btn.classList.toggle("active", active);
+  btn.setAttribute("aria-pressed", String(active));
+  label.textContent = t("sidebar.localAdmin");
+  btn.title = t(state.isElevated ? "sidebar.localAdminActiveTitle" : "sidebar.localAdminTitle");
+}
+
 export function initConnections(): void {
+  syncLocalAdminToggle();
+  onLanguageChange(() => {
+    syncLocalAdminToggle();
+    renderConnections();
+    $<HTMLButtonElement>("#toggle-sidebar").title = t(
+      state.sidebarCollapsed ? "titlebar.expandSidebar" : "titlebar.collapseSidebar",
+    );
+  });
   $("#add-connection").addEventListener("click", () => openConnectionDialog());
   $("#welcome-add").addEventListener("click", () => openConnectionDialog());
   $("#toggle-sidebar").addEventListener("click", toggleSidebar);
 
+  $("#local-admin-toggle").addEventListener("click", () => {
+    if (state.isElevated) {
+      notify(t("titlebar.adminAlreadyNotify"));
+      return;
+    }
+    state.localShellAdmin = !state.localShellAdmin;
+    syncLocalAdminToggle();
+  });
+
   document.querySelectorAll<HTMLButtonElement>("[data-local-shell]").forEach(btn =>
     btn.addEventListener("click", () => {
       const kind = btn.dataset.localShell as "power_shell" | "cmd" | "wsl";
+      if (state.localShellAdmin && !state.isElevated) {
+        const shellNames = {
+          power_shell: t("session.localPwsh"),
+          cmd: t("session.localCmd"),
+          wsl: t("session.localWsl"),
+        };
+        void api
+          .openElevatedLocalTerminal(kind)
+          .then(() => notify(t("sidebar.localAdminOpened", { shell: shellNames[kind] })))
+          .catch(error => notify(friendlyError(error), true));
+        return;
+      }
       void openLocalTerminalSession(kind);
     }),
   );
@@ -263,7 +301,7 @@ export function initConnections(): void {
     if (!path) return;
     try {
       const count = await api.exportConnections(path);
-      notify(`已导出 ${count} 个连接配置（不含密码）`);
+      notify(t("sidebar.exportSuccess", { count }));
     } catch (error) {
       notify(friendlyError(error), true);
     }
@@ -276,7 +314,7 @@ export function initConnections(): void {
       const count = await api.importConnections(path);
       await loadWorkbenchState();
       await loadConnections();
-      notify(count > 0 ? `已导入 ${count} 个新连接` : "未发现新的连接配置（已跳过重复项）");
+      notify(count > 0 ? t("sidebar.importSuccess", { count }) : t("sidebar.importEmpty"));
     } catch (error) {
       notify(friendlyError(error), true);
     }
@@ -315,7 +353,7 @@ export function initConnections(): void {
         await loadWorkbenchState();
         state.connections.set(copy.id, copy);
         renderConnections();
-        notify(`已复制连接“${copy.name}”`);
+        notify(t("sidebar.dupSuccess", { name: copy.name }));
       } catch (error) {
         notify(friendlyError(error), true);
       }
@@ -326,13 +364,13 @@ export function initConnections(): void {
     if (deleteButton) {
       const profile = state.connections.get(deleteButton.dataset.delete!);
       if (!profile) return;
-      if (!window.confirm(`删除“${profile.name}”及其已保存的密码？`)) return;
+      if (!window.confirm(t("sidebar.delConfirm", { name: profile.name }))) return;
       try {
         await api.deleteConnection(profile.id);
         state.connections.delete(profile.id);
         delete state.workbench.connection_meta[profile.id];
         renderConnections();
-        notify("连接已删除");
+        notify(t("sidebar.delSuccess", { name: profile.name }));
       } catch (error) {
         notify(String(error), true);
       }

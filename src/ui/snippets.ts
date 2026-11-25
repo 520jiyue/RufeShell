@@ -1,3 +1,4 @@
+import { onLanguageChange, t } from "../i18n/index.ts";
 import { icon } from "../icons.ts";
 import { getActiveSession, persistWorkbenchState, state } from "../state.ts";
 import type { CommandSnippet, Session } from "../types.ts";
@@ -27,7 +28,7 @@ export function renderSnippets(): void {
   const groupSelect = $<HTMLSelectElement>("#snippet-group-filter");
   const currentGroup = state.snippetGroupFilter;
   groupSelect.innerHTML =
-    '<option value="all">全部分组</option>' +
+    `<option value="all">${escapeHtml(t("sidebar.allGroups"))}</option>` +
     groups.map(group => `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`).join("");
   groupSelect.value = groups.includes(currentGroup) ? currentGroup : "all";
 
@@ -42,8 +43,7 @@ export function renderSnippets(): void {
 
   const container = $("#snippet-list");
   if (!list.length) {
-    container.innerHTML =
-      '<div class="empty-drawer">暂无常用命令<br/><small>点击“新增命令”保存常用运维指令，支持 {domain} 等变量占位符</small></div>';
+    container.innerHTML = `<div class="empty-drawer">${t("snippets.empty")}</div>`;
     return;
   }
 
@@ -61,14 +61,14 @@ export function renderSnippets(): void {
           <div class="snippet-card-top">
             <div class="snippet-title-wrap">
               <strong>${escapeHtml(snippet.name)}</strong>
-              <span class="snippet-group-pill">${escapeHtml(snippet.group || "未分组")}</span>
+              <span class="snippet-group-pill">${escapeHtml(snippet.group || t("snippets.ungrouped"))}</span>
               ${shortcutBadge}
             </div>
             <div class="snippet-actions">
-              <button type="button" class="icon-button" data-snippet-fill="${snippet.id}" title="填入命令（不立即回车）">${icon("terminal")}</button>
-              <button type="button" class="icon-button accent-subtle" data-snippet-run="${snippet.id}" title="执行命令">${icon("play")}</button>
-              <button type="button" class="icon-button" data-snippet-edit="${snippet.id}" title="编辑">${icon("edit")}</button>
-              <button type="button" class="icon-button" data-snippet-del="${snippet.id}" title="删除">${icon("trash")}</button>
+              <button type="button" class="icon-button" data-snippet-fill="${snippet.id}" title="${escapeHtml(t("snippets.fillTitle"))}">${icon("terminal")}</button>
+              <button type="button" class="icon-button accent-subtle" data-snippet-run="${snippet.id}" title="${escapeHtml(t("snippets.runTitle"))}">${icon("play")}</button>
+              <button type="button" class="icon-button" data-snippet-edit="${snippet.id}" title="${escapeHtml(t("common.edit"))}">${icon("edit")}</button>
+              <button type="button" class="icon-button" data-snippet-del="${snippet.id}" title="${escapeHtml(t("common.delete"))}">${icon("trash")}</button>
             </div>
           </div>
           <code class="snippet-code">${escapeHtml(snippet.command)}</code>
@@ -81,9 +81,9 @@ export function renderSnippets(): void {
 
 function resetSnippetForm(snippet?: CommandSnippet): void {
   editingSnippetId = snippet?.id ?? null;
-  $("#snippet-form-title").textContent = snippet ? "编辑常用命令" : "新增常用命令";
+  $("#snippet-form-title").textContent = t(snippet ? "snippets.formTitleEdit" : "snippets.formTitleNew");
   $<HTMLInputElement>("#snippet-name").value = snippet?.name ?? "";
-  $<HTMLInputElement>("#snippet-group").value = snippet?.group ?? "系统维护";
+  $<HTMLInputElement>("#snippet-group").value = snippet?.group ?? t("snippets.groupDefault");
   $<HTMLSelectElement>("#snippet-shortcut").value = snippet?.shortcut ?? "";
   $<HTMLInputElement>("#snippet-desc").value = snippet?.description ?? "";
   $<HTMLTextAreaElement>("#snippet-command").value = snippet?.command ?? "";
@@ -95,7 +95,7 @@ export async function runSnippet(snippet: CommandSnippet, execute = true): Promi
   const session = getActiveSession();
   if (!session || session.status !== "connected") {
     await navigator.clipboard?.writeText(snippet.command).catch(() => undefined);
-    notify("当前没有已连接的终端，已复制命令模板到剪贴板");
+    notify(t("snippets.copiedNoTerm"));
     return;
   }
 
@@ -115,8 +115,8 @@ export async function runSnippet(snippet: CommandSnippet, execute = true): Promi
     .map(
       name => `
         <label>
-          <span>变量 {${escapeHtml(name)}}</span>
-          <input data-var-name="${escapeHtml(name)}" value="${escapeHtml(state.variableMemory[name] ?? "")}" placeholder="请输入 ${escapeHtml(name)} 的值" required />
+          <span>${escapeHtml(t("vars.fieldLabel", { varTag: `{${name}}` }))}</span>
+          <input data-var-name="${escapeHtml(name)}" value="${escapeHtml(state.variableMemory[name] ?? "")}" placeholder="${escapeHtml(t("vars.fieldPlaceholder", { name }))}" required />
         </label>
       `,
     )
@@ -158,6 +158,9 @@ export function openSnippetsDialog(): void {
 }
 
 export function initSnippetsUI(): void {
+  onLanguageChange(() => {
+    if ($<HTMLDialogElement>("#snippets-dialog").open) renderSnippets();
+  });
   $("#open-snippets").addEventListener("click", openSnippetsDialog);
   $("#new-snippet-btn").addEventListener("click", () => resetSnippetForm());
   $("#cancel-snippet-form").addEventListener("click", () => {
@@ -178,7 +181,7 @@ export function initSnippetsUI(): void {
   $("#snippet-form").addEventListener("submit", event => {
     event.preventDefault();
     const name = $<HTMLInputElement>("#snippet-name").value.trim();
-    const group = $<HTMLInputElement>("#snippet-group").value.trim() || "系统维护";
+    const group = $<HTMLInputElement>("#snippet-group").value.trim() || t("snippets.groupDefault");
     const shortcut = $<HTMLSelectElement>("#snippet-shortcut").value || null;
     const description = $<HTMLInputElement>("#snippet-desc").value.trim() || null;
     const command = $<HTMLTextAreaElement>("#snippet-command").value.trim();
@@ -219,7 +222,7 @@ export function initSnippetsUI(): void {
     editingSnippetId = null;
     void persistWorkbenchState();
     renderSnippets();
-    notify("常用命令已保存");
+    notify(t("snippets.saved"));
   });
 
   $("#snippet-list").addEventListener("click", event => {
@@ -248,11 +251,11 @@ export function initSnippetsUI(): void {
     const delBtn = target.closest<HTMLButtonElement>("[data-snippet-del]");
     if (delBtn) {
       const snippet = state.workbench.snippets.find(item => item.id === delBtn.dataset.snippetDel);
-      if (!snippet || !window.confirm(`删除常用命令“${snippet.name}”？`)) return;
+      if (!snippet || !window.confirm(t("snippets.delConfirm", { name: snippet.name }))) return;
       state.workbench.snippets = state.workbench.snippets.filter(item => item.id !== snippet.id);
       void persistWorkbenchState();
       renderSnippets();
-      notify("已删除常用命令");
+      notify(t("snippets.deleted"));
     }
   });
 

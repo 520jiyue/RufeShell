@@ -1,3 +1,5 @@
+import { t } from "./i18n/index.ts";
+
 const HTML_ENTITIES: Record<string, string> = {
   "&": "&amp;",
   "<": "&lt;",
@@ -30,8 +32,8 @@ export function formatBytes(bytes: number): string {
 export function formatUptime(seconds: number): string {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
-  if (days > 0) return `${days} 天 ${hours} 小时`;
-  return `${hours} 小时 ${Math.floor((seconds % 3600) / 60)} 分钟`;
+  if (days > 0) return t("metrics.uptimeDays", { days, hours });
+  return t("metrics.uptimeHours", { hours, mins: Math.floor((seconds % 3600) / 60) });
 }
 
 export function notify(message: string, isError = false): void {

@@ -1,4 +1,5 @@
 import { icon } from "../icons.ts";
+import { onLanguageChange } from "../i18n/index.ts";
 import { escapeHtml } from "../utils.ts";
 
 let activeMenu: {
@@ -271,5 +272,9 @@ export function initCustomSelects(): void {
     childList: true,
     subtree: true,
     characterData: true,
+  });
+
+  onLanguageChange(() => {
+    document.querySelectorAll<HTMLSelectElement>("select").forEach(syncSelectUI);
   });
 }

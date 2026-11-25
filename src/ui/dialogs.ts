@@ -1,4 +1,5 @@
 import { api, dialogs, friendlyError } from "../api.ts";
+import { t } from "../i18n/index.ts";
 import { getConnectionMeta, setConnectionMeta, state } from "../state.ts";
 import type { AuthKind, Connection, Session } from "../types.ts";
 import { $, notify } from "../utils.ts";
@@ -27,11 +28,13 @@ export function openConnectionDialog(profileToEdit?: Connection): void {
   editingConnectionId = profileToEdit?.id ?? null;
 
   const isEditing = Boolean(profileToEdit);
-  $("#connection-dialog-eyebrow").textContent = isEditing ? "EDIT CONNECTION" : "NEW CONNECTION";
-  $("#connection-dialog-title").textContent = isEditing ? "编辑连接配置" : "建立新的连接";
-  $("#connection-submit-btn").textContent = isEditing ? "更新连接" : "保存连接";
-  $("#password-label-text").textContent = isEditing ? "新密码（留空则保留原密码）" : "密码";
-  $<HTMLInputElement>('[name="password"]').placeholder = isEditing ? "留空保持原密码不变" : "连接密码";
+  $("#connection-dialog-eyebrow").textContent = isEditing ? t("conn.eyebrowEdit") : t("conn.eyebrowNew");
+  $("#connection-dialog-title").textContent = t(isEditing ? "conn.titleEdit" : "conn.titleNew");
+  $("#connection-submit-btn").textContent = t(isEditing ? "conn.updateBtn" : "conn.saveBtn");
+  $("#password-label-text").textContent = t(isEditing ? "conn.passwordEdit" : "conn.password");
+  $<HTMLInputElement>('[name="password"]').placeholder = t(
+    isEditing ? "conn.passwordEditPlaceholder" : "conn.passwordPlaceholder",
+  );
 
   if (profileToEdit) {
     const meta = getConnectionMeta(profileToEdit.id);
@@ -84,7 +87,7 @@ export async function acceptHost(remember: boolean): Promise<void> {
   once.disabled = true;
   save.disabled = true;
   $("#connect-error").textContent = "";
-  once.textContent = "正在连接…";
+  once.textContent = t("host.connectingBtn");
 
   try {
     const password = $<HTMLInputElement>("#connection-password").value;
@@ -97,7 +100,7 @@ export async function acceptHost(remember: boolean): Promise<void> {
     });
     $<HTMLDialogElement>("#connect-dialog").close();
     callbacks.onSessionConnected(id, discovered.profile);
-    notify("已建立加密连接");
+    notify(t("host.connectedNotify"));
   } catch (error) {
     if (!requestPassword(error)) {
       $("#connect-error").textContent = friendlyError(error);
@@ -105,7 +108,7 @@ export async function acceptHost(remember: boolean): Promise<void> {
   } finally {
     state.connecting = false;
     once.disabled = false;
-    once.textContent = discovered.known ? "连接" : "只接受本次";
+    once.textContent = t(discovered.known ? "host.connect" : "host.acceptOnce");
     save.disabled = discovered.known;
   }
 }
@@ -121,10 +124,10 @@ export async function startConnectionWithConfirmation(
   dialog.dataset.profile = profile.id;
   $("#connect-target").textContent = `${profile.username}@${profile.host}:${profile.port}`;
   $("#connect-error").textContent = initialError ?? "";
-  $("#host-dialog-title").textContent = "正在获取服务器身份";
-  $("#host-algorithm").textContent = "获取中…";
-  $("#host-fingerprint").textContent = "获取中…";
-  $("#host-notice").textContent = "正在连接服务器并读取主机公钥，此步骤不会登录。";
+  $("#host-dialog-title").textContent = t("host.fetchingTitle");
+  $("#host-algorithm").textContent = t("host.fetchingValue");
+  $("#host-fingerprint").textContent = t("host.fetchingValue");
+  $("#host-notice").textContent = t("host.fetchingNotice");
   $("#password-entry").classList.add("hidden");
   $<HTMLInputElement>("#connection-password").value = "";
   dialog.classList.remove("password-needed");
@@ -138,19 +141,19 @@ export async function startConnectionWithConfirmation(
     state.discoveredHost = { profile, key, known };
 
     $("#host-dialog-title").textContent = known
-      ? "服务器身份已确认"
+      ? t("host.verifiedTitle")
       : key.changed
-        ? "警告：服务器密钥已改变"
-        : "核对服务器身份";
+        ? t("host.changedTitle")
+        : t("host.title");
     $("#host-algorithm").textContent = key.algorithm;
     $("#host-fingerprint").textContent = key.fingerprint;
     $("#host-notice").textContent = known
-      ? "已保存的主机密钥匹配，可以直接连接。"
+      ? t("host.verifiedNotice")
       : key.changed
-        ? `之前保存的指纹为 ${key.previous_fingerprint}。除非你确认服务器已重新安装或管理员更换了密钥，否则不要继续。`
-        : "服务器尚未登记。请通过管理员等可信渠道核对指纹，再选择接受方式。";
+        ? t("host.changedNotice", { fp: key.previous_fingerprint ?? "" })
+        : t("host.unknownNotice");
 
-    $("#accept-once").textContent = known ? "连接" : "只接受本次";
+    $("#accept-once").textContent = t(known ? "host.connect" : "host.acceptOnce");
     $<HTMLButtonElement>("#accept-once").disabled = false;
     $<HTMLButtonElement>("#accept-save").disabled = known;
 
@@ -159,10 +162,10 @@ export async function startConnectionWithConfirmation(
       await acceptHost(false);
     }
   } catch (error) {
-    $("#host-dialog-title").textContent = "无法获取服务器身份";
+    $("#host-dialog-title").textContent = t("host.failedTitle");
     $("#host-algorithm").textContent = "—";
     $("#host-fingerprint").textContent = "—";
-    $("#host-notice").textContent = "请检查地址、端口及服务器 SSH 服务。";
+    $("#host-notice").textContent = t("host.failedNotice");
     $("#connect-error").textContent = friendlyError(error);
   } finally {
     state.connecting = false;
@@ -182,7 +185,7 @@ export async function openRemoteFile(
     const dialog = $<HTMLDialogElement>("#editor-dialog");
     dialog.dataset.session = session.id;
     dialog.dataset.path = path;
-    $("#editor-title").textContent = mode === "view" ? `${name}（快速查看）` : name;
+    $("#editor-title").textContent = mode === "view" ? t("editor.quickViewName", { name }) : name;
     $("#editor-path").textContent = path;
     const editor = $<HTMLTextAreaElement>("#file-editor");
     editor.value = text;
@@ -210,7 +213,7 @@ async function saveEditorContents(): Promise<void> {
   try {
     await api.writeTextFile(session.id, remotePath, $<HTMLTextAreaElement>("#file-editor").value);
     dialog.close();
-    notify("远程文件已保存");
+    notify(t("editor.saved"));
   } catch (error) {
     $("#editor-error").textContent = friendlyError(error);
   } finally {
@@ -281,7 +284,7 @@ export function initDialogs(nextCallbacks: DialogCallbacks): void {
       state.connections.set(profile.id, profile);
       callbacks.onConnectionSaved();
       $<HTMLDialogElement>("#connection-dialog").close();
-      notify(editingConnectionId ? "连接配置已更新" : "连接已保存，点击卡片即可连接");
+      notify(t(editingConnectionId ? "conn.updatedNotify" : "conn.savedNotify"));
       editingConnectionId = null;
     } catch (error) {
       $("#form-error").textContent = String(error);

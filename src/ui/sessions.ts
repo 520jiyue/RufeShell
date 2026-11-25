@@ -1,6 +1,7 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { api, friendlyError, onSessionEvent, onSessionWarning } from "../api.ts";
+import { onLanguageChange, t } from "../i18n/index.ts";
 import { icon } from "../icons.ts";
 import { getActiveSession, getConnectionMeta, state } from "../state.ts";
 import { resolveTerminalTheme } from "../themes.ts";
@@ -26,12 +27,12 @@ function updateSessionBadge(status: Session["status"]): void {
   badge.className = `session-status-badge ${status}`;
   badge.textContent =
     status === "connected"
-      ? "已连接"
+      ? t("common.connected")
       : status === "closed"
-        ? "已断开"
+        ? t("common.disconnected")
         : status === "authenticating"
-          ? "认证中"
-          : "连接中";
+          ? t("common.authenticating")
+          : t("common.connecting");
 }
 
 function updateReconnectUI(session: Session): void {
@@ -97,9 +98,9 @@ export function renderTabs(): void {
         <div class="session-tab ${session.id === state.activeId ? "active" : ""}">
           <button type="button" data-activate="${session.id}">
             <span class="status-dot ${session.status}"></span>
-            <span>${session.kind === "local" ? "本地 · " : ""}${escapeHtml(session.profile.name)}</span>
+            <span>${session.kind === "local" ? escapeHtml(t("session.localPrefix")) : ""}${escapeHtml(session.profile.name)}</span>
           </button>
-          <button type="button" class="tab-close" data-close="${session.id}" title="关闭会话 (Ctrl+W)">${icon("x")}</button>
+          <button type="button" class="tab-close" data-close="${session.id}" title="${escapeHtml(t("session.closeTabTitle"))}">${icon("x")}</button>
         </div>
       `,
     )
@@ -147,17 +148,17 @@ export function activateSession(id: string): void {
   $<HTMLInputElement>("#remote-path").value = session.path;
   $("#session-title").textContent = session.profile.name;
   $("#session-address").textContent = isLocal
-    ? "本地 ConPTY 终端"
+    ? t("session.localAddress")
     : `${session.profile.username}@${session.profile.host}:${session.profile.port}`;
   updateSessionBadge(session.status);
   updateReconnectUI(session);
 
   setGlobalStatus(
     session.status === "connected"
-      ? "已连接"
+      ? t("common.connected")
       : session.status === "closed"
-        ? "会话已关闭"
-        : "正在建立连接…",
+        ? t("common.sessionClosed")
+        : t("common.connectingProgress"),
   );
 
   setSessionMode(session.mode);
@@ -253,7 +254,7 @@ function attachTerminalInteractions(session: Session): void {
         ?.writeText(selected)
         .then(() => {
           terminal.clearSelection();
-          notify("已复制选中内容");
+          notify(t("term.copiedSelection"));
         })
         .catch(() => undefined);
       return;
@@ -294,15 +295,15 @@ function buildSessionInstance(
   const fileElement = document.createElement("div");
   fileElement.className = "file-container hidden";
   fileElement.innerHTML = `
-    <div class="file-labels"><span>名称</span><span>大小</span></div>
-    <div class="file-list"><div class="empty-files">正在准备文件列表…</div></div>
+    <div class="file-labels"><span>${escapeHtml(t("common.name"))}</span><span>${escapeHtml(t("common.size"))}</span></div>
+    <div class="file-list"><div class="empty-files">${escapeHtml(t("files.preparing"))}</div></div>
   `;
   $("#file-containers").append(fileElement);
 
   const metricsElement = document.createElement("div");
   metricsElement.id = "metrics-content";
   metricsElement.className = "metrics-content";
-  metricsElement.innerHTML = '<p class="metrics-placeholder">正在读取服务器资源…</p>';
+  metricsElement.innerHTML = `<p class="metrics-placeholder">${escapeHtml(t("metrics.placeholderLoading"))}</p>`;
 
   const session: Session = {
     id,
@@ -355,7 +356,7 @@ export function createSession(id: string, profile: Connection): void {
       if (session.status === "connected" || status !== "connected") return;
       session.status = status;
       if (state.activeId === id) {
-        setGlobalStatus("已连接");
+        setGlobalStatus(t("common.connected"));
         updateSessionBadge("connected");
         updateReconnectUI(session);
       }
@@ -369,9 +370,9 @@ export function createSession(id: string, profile: Connection): void {
 
 export async function openLocalTerminalSession(kind: LocalShellKind): Promise<void> {
   const labelMap: Record<LocalShellKind, string> = {
-    power_shell: "PowerShell",
-    cmd: "CMD 命令提示符",
-    wsl: "WSL Linux",
+    power_shell: t("session.localPwsh"),
+    cmd: t("session.localCmd"),
+    wsl: t("session.localWsl"),
   };
   try {
     const id = await api.openLocalTerminal(kind);
@@ -419,7 +420,7 @@ async function performReconnect(session: Session): Promise<void> {
   updateSessionBadge("connecting");
   renderTabs();
   if (state.activeId === session.id) {
-    $("#reconnect-status-text").textContent = "正在重新建立 SSH 会话…";
+    $("#reconnect-status-text").textContent = t("reconnect.reconnecting");
   }
 
   try {
@@ -456,7 +457,7 @@ async function performReconnect(session: Session): Promise<void> {
     }
     state.pendingOutput.delete(newId);
 
-    session.terminal.write("\r\n\x1b[32m[已重新连接]\x1b[0m\r\n");
+    session.terminal.write(`\r\n\x1b[32m${t("reconnect.termSuccess")}\x1b[0m\r\n`);
     session.fit.fit();
     const { cols, rows } = session.terminal;
     void api.terminalResize(newId, cols, rows).catch(() => undefined);
@@ -464,17 +465,17 @@ async function performReconnect(session: Session): Promise<void> {
     if (state.activeId === newId) {
       updateSessionBadge("connected");
       updateReconnectUI(session);
-      setGlobalStatus("已重连");
+      setGlobalStatus(t("common.reconnected"));
     }
     void loadDirectory(newId, session.path);
     startMetrics(session);
     renderTabs();
     onSessionsChange();
-    notify(`已重新连接到 ${session.profile.name}`);
+    notify(t("reconnect.notifySuccess", { name: session.profile.name }));
   } catch (error) {
     session.status = "closed";
     const msg = friendlyError(error);
-    session.terminal.write(`\r\n\x1b[31m[重连失败] ${msg}\x1b[0m\r\n`);
+    session.terminal.write(`\r\n\x1b[31m${t("reconnect.termFail", { msg })}\x1b[0m\r\n`);
     scheduleAutoReconnect(session);
   }
 }
@@ -491,7 +492,7 @@ function scheduleAutoReconnect(session: Session): void {
     if (session.reconnectAttempts >= maxAttempts && !session.manualClose) {
       if (state.activeId === session.id) {
         $("#reconnect-banner").classList.remove("hidden");
-        $("#reconnect-status-text").textContent = `已达到最大重连次数 (${maxAttempts})，请手动重连`;
+        $("#reconnect-status-text").textContent = t("reconnect.maxReached", { max: maxAttempts });
       }
     }
     return;
@@ -501,11 +502,18 @@ function scheduleAutoReconnect(session: Session): void {
   const delaySec = Math.min(16, 2 ** session.reconnectAttempts);
   if (state.activeId === session.id) {
     $("#reconnect-banner").classList.remove("hidden");
-    $("#reconnect-status-text").textContent =
-      `网络波动断开 · ${delaySec} 秒后自动重连（第 ${session.reconnectAttempts}/${maxAttempts} 次）…`;
+    $("#reconnect-status-text").textContent = t("reconnect.countdown", {
+      delay: delaySec,
+      attempt: session.reconnectAttempts,
+      max: maxAttempts,
+    });
   }
   session.terminal.write(
-    `\r\n\x1b[33m[连接中断] ${delaySec} 秒后尝试第 ${session.reconnectAttempts}/${maxAttempts} 次自动重连…\x1b[0m\r\n`,
+    `\r\n\x1b[33m${t("reconnect.termAttempt", {
+      delay: delaySec,
+      attempt: session.reconnectAttempts,
+      max: maxAttempts,
+    })}\x1b[0m\r\n`,
   );
 
   session.reconnectTimer = window.setTimeout(() => {
@@ -551,8 +559,8 @@ export async function disconnectSession(id: string): Promise<void> {
   if (!state.sessions.size) {
     $("#session-view").classList.add("hidden");
     $("#welcome").classList.remove("hidden");
-    $("#metrics-content").innerHTML = '<p class="metrics-placeholder">连接后自动读取 Linux 系统资源</p>';
-    setGlobalStatus("就绪");
+    $("#metrics-content").innerHTML = `<p class="metrics-placeholder">${escapeHtml(t("metrics.placeholder"))}</p>`;
+    setGlobalStatus(t("common.ready"));
   }
   renderTabs();
   onSessionsChange();
@@ -575,6 +583,25 @@ export function activateSessionByIndex(index: number): void {
 
 export async function initSessions(notifyConnectionsChanged: () => void): Promise<void> {
   onSessionsChange = notifyConnectionsChanged;
+  onLanguageChange(() => {
+    renderTabs();
+    const active = getActiveSession();
+    if (active) {
+      updateSessionBadge(active.status);
+      if (active.kind === "local") {
+        $("#session-address").textContent = t("session.localAddress");
+      }
+      setGlobalStatus(
+        active.status === "connected"
+          ? t("common.connected")
+          : active.status === "closed"
+            ? t("common.sessionClosed")
+            : t("common.connectingProgress"),
+      );
+    } else {
+      setGlobalStatus(t("common.ready"));
+    }
+  });
 
   document.querySelectorAll<HTMLButtonElement>("[data-session-mode]").forEach(btn =>
     btn.addEventListener("click", () => {
@@ -622,7 +649,7 @@ export async function initSessions(notifyConnectionsChanged: () => void): Promis
     session.manualClose = true;
     cancelAutoReconnect(session);
     updateReconnectUI(session);
-    notify("已停止自动重连");
+    notify(t("reconnect.stopped"));
   });
 
   new ResizeObserver(() => {
@@ -693,10 +720,10 @@ export async function initSessions(notifyConnectionsChanged: () => void): Promis
       updateReconnectUI(session);
       setGlobalStatus(
         payload.status === "connected"
-          ? "已连接"
+          ? t("common.connected")
           : payload.status === "closed"
-            ? "会话已关闭"
-            : "正在建立连接…",
+            ? t("common.sessionClosed")
+            : t("common.connectingProgress"),
       );
     }
     renderTabs();

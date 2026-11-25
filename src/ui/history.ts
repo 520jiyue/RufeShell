@@ -1,3 +1,4 @@
+import { formatLocaleTime, onLanguageChange, t } from "../i18n/index.ts";
 import { icon } from "../icons.ts";
 import { getActiveSession, persistWorkbenchState, state } from "../state.ts";
 import type { HistoryEntry, HistoryOutcome, Session } from "../types.ts";
@@ -88,20 +89,13 @@ export function getDeduplicatedCommands(): string[] {
 }
 
 function formatTime(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
+  return formatLocaleTime(unixSeconds);
 }
 
 function outcomeBadge(outcome: HistoryOutcome): string {
-  if (outcome === "failed") return '<span class="history-outcome failed">发送失败</span>';
-  if (outcome === "error") return '<span class="history-outcome error">异常输出</span>';
-  return '<span class="history-outcome sent">已执行</span>';
+  if (outcome === "failed") return `<span class="history-outcome failed">${escapeHtml(t("history.outcomeFailed"))}</span>`;
+  if (outcome === "error") return `<span class="history-outcome error">${escapeHtml(t("history.outcomeError"))}</span>`;
+  return `<span class="history-outcome sent">${escapeHtml(t("history.outcomeSent"))}</span>`;
 }
 
 export function renderHistoryList(): void {
@@ -110,8 +104,7 @@ export function renderHistoryList(): void {
 
   const list = $("#history-list");
   if (!items.length) {
-    list.innerHTML =
-      '<div class="empty-drawer">暂无匹配的历史指令<br/><small>敏感命令（如密码、密钥参数）会自动过滤，不会被记录</small></div>';
+    list.innerHTML = `<div class="empty-drawer">${t("history.empty")}</div>`;
     return;
   }
 
@@ -128,9 +121,9 @@ export function renderHistoryList(): void {
             </div>
           </div>
           <div class="history-actions">
-            <button type="button" class="icon-button" data-history-fill="${item.id}" title="填入命令栏">${icon("edit")}</button>
-            <button type="button" class="icon-button" data-history-run="${item.id}" title="立即发送到当前终端">${icon("play")}</button>
-            <button type="button" class="icon-button" data-history-del="${item.id}" title="删除记录">${icon("trash")}</button>
+            <button type="button" class="icon-button" data-history-fill="${item.id}" title="${escapeHtml(t("history.fillTitle"))}">${icon("edit")}</button>
+            <button type="button" class="icon-button" data-history-run="${item.id}" title="${escapeHtml(t("history.runTitle"))}">${icon("play")}</button>
+            <button type="button" class="icon-button" data-history-del="${item.id}" title="${escapeHtml(t("history.delTitle"))}">${icon("trash")}</button>
           </div>
         </div>
       `,
@@ -151,7 +144,7 @@ async function runHistoryEntry(entry: HistoryEntry, execute: boolean): Promise<v
   const session = getActiveSession();
   if (!session || session.status !== "connected") {
     await navigator.clipboard?.writeText(entry.command).catch(() => undefined);
-    notify("当前没有已连接的终端，已复制指令到剪贴板");
+    notify(t("history.copiedNoTerm"));
     return;
   }
   $<HTMLDialogElement>("#history-dialog").close();
@@ -160,6 +153,9 @@ async function runHistoryEntry(entry: HistoryEntry, execute: boolean): Promise<v
 }
 
 export function initHistoryUI(): void {
+  onLanguageChange(() => {
+    if ($<HTMLDialogElement>("#history-dialog").open) renderHistoryList();
+  });
   $("#open-history").addEventListener("click", openHistoryDialog);
 
   $<HTMLInputElement>("#history-search").addEventListener("input", event => {
@@ -176,11 +172,11 @@ export function initHistoryUI(): void {
 
   $("#history-clear").addEventListener("click", () => {
     if (!state.workbench.history.length) return;
-    if (!window.confirm(`确认清空全部 ${state.workbench.history.length} 条历史指令记录？`)) return;
+    if (!window.confirm(t("history.clearConfirm", { count: state.workbench.history.length }))) return;
     state.workbench.history = [];
     void persistWorkbenchState();
     renderHistoryList();
-    notify("历史指令已清空");
+    notify(t("history.cleared"));
   });
 
   $("#history-dialog").addEventListener("keydown", event => {

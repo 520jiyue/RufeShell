@@ -91,24 +91,154 @@ impl LocalPtyManager {
     }
 }
 
+pub fn is_process_elevated() -> bool {
+    platform::is_process_elevated()
+}
+
+pub fn relaunch_as_admin() -> Result<(), AppError> {
+    platform::relaunch_as_admin()
+}
+
+pub fn spawn_elevated_shell(kind: LocalShellKind) -> Result<(), AppError> {
+    platform::spawn_elevated_shell(kind)
+}
+
 #[cfg(windows)]
 mod platform {
     use super::*;
-    use std::{ffi::c_void, os::windows::ffi::OsStrExt, ptr};
+    use std::{ffi::c_void, os::windows::ffi::OsStrExt, os::windows::process::CommandExt, ptr};
     use windows_sys::Win32::{
-        Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE},
+        Foundation::{CloseHandle, GetLastError, ERROR_CANCELLED, HANDLE, INVALID_HANDLE_VALUE},
+        Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY},
         Storage::FileSystem::{ReadFile, WriteFile},
         System::{
             Console::{ClosePseudoConsole, CreatePseudoConsole, ResizePseudoConsole, COORD, HPCON},
             Pipes::CreatePipe,
             Threading::{
-                CreateProcessW, DeleteProcThreadAttributeList, InitializeProcThreadAttributeList,
-                TerminateProcess, UpdateProcThreadAttribute, EXTENDED_STARTUPINFO_PRESENT,
-                LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION,
-                PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, STARTF_USESTDHANDLES, STARTUPINFOEXW,
+                CreateProcessW, DeleteProcThreadAttributeList, GetCurrentProcess,
+                InitializeProcThreadAttributeList, OpenProcessToken, TerminateProcess,
+                UpdateProcThreadAttribute, EXTENDED_STARTUPINFO_PRESENT, LPPROC_THREAD_ATTRIBUTE_LIST,
+                PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, STARTF_USESTDHANDLES,
+                STARTUPINFOEXW,
             },
         },
     };
+
+    #[link(name = "shell32")]
+    extern "system" {
+        fn ShellExecuteW(
+            hwnd: *mut c_void,
+            lp_operation: *const u16,
+            lp_file: *const u16,
+            lp_parameters: *const u16,
+            lp_directory: *const u16,
+            n_show_cmd: i32,
+        ) -> isize;
+    }
+
+    const SW_SHOWNORMAL: i32 = 1;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    fn to_wide(value: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
+        value.as_ref().encode_wide().chain(Some(0)).collect()
+    }
+
+    pub fn is_process_elevated() -> bool {
+        unsafe {
+            let mut token: HANDLE = ptr::null_mut();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+                return false;
+            }
+            let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
+            let mut ret_len = 0u32;
+            let ok = GetTokenInformation(
+                token,
+                TokenElevation,
+                (&mut elevation as *mut TOKEN_ELEVATION).cast(),
+                std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+                &mut ret_len,
+            );
+            CloseHandle(token);
+            ok != 0 && elevation.TokenIsElevated != 0
+        }
+    }
+
+    fn shell_execute_runas(
+        exe: &std::ffi::OsStr,
+        params: Option<&std::ffi::OsStr>,
+        cwd: Option<&std::ffi::OsStr>,
+    ) -> Result<(), AppError> {
+        let verb_w = to_wide("runas");
+        let file_w = to_wide(exe);
+        let params_w = params.map(to_wide);
+        let cwd_w = cwd.map(to_wide);
+
+        let result = unsafe {
+            ShellExecuteW(
+                ptr::null_mut(),
+                verb_w.as_ptr(),
+                file_w.as_ptr(),
+                params_w.as_ref().map_or(ptr::null(), |p| p.as_ptr()),
+                cwd_w.as_ref().map_or(ptr::null(), |d| d.as_ptr()),
+                SW_SHOWNORMAL,
+            )
+        };
+
+        if result > 32 {
+            return Ok(());
+        }
+
+        let code = unsafe { GetLastError() };
+        if result == 5 || code == ERROR_CANCELLED {
+            return Err(AppError::Validation("已取消管理员授权，或权限请求被拒绝".into()));
+        }
+        Err(AppError::Io(format!(
+            "以管理员权限启动失败（ShellExecute 错误码 {result} / 系统错误 {code}）"
+        )))
+    }
+
+    pub fn relaunch_as_admin() -> Result<(), AppError> {
+        if is_process_elevated() {
+            return Ok(());
+        }
+        let exe = std::env::current_exe()
+            .map_err(|err| AppError::Io(format!("无法获取当前程序路径：{err}")))?;
+        let cwd = std::env::current_dir().ok();
+        shell_execute_runas(
+            exe.as_os_str(),
+            None,
+            cwd.as_deref().map(std::path::Path::as_os_str),
+        )
+    }
+
+    pub fn resolve_shell_spec(kind: LocalShellKind) -> (&'static str, &'static str) {
+        match kind {
+            LocalShellKind::PowerShell => {
+                if std::process::Command::new("pwsh.exe")
+                    .arg("--version")
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .output()
+                    .is_ok()
+                {
+                    ("pwsh.exe", "-NoLogo")
+                } else {
+                    ("powershell.exe", "-NoLogo")
+                }
+            }
+            LocalShellKind::Cmd => ("cmd.exe", ""),
+            LocalShellKind::Wsl => ("wsl.exe", ""),
+        }
+    }
+
+    pub fn spawn_elevated_shell(kind: LocalShellKind) -> Result<(), AppError> {
+        let (exe, args) = resolve_shell_spec(kind);
+        let cwd = std::env::var_os("USERPROFILE");
+        shell_execute_runas(
+            std::ffi::OsStr::new(exe),
+            (!args.is_empty()).then(|| std::ffi::OsStr::new(args)),
+            cwd.as_deref(),
+        )
+    }
 
     struct HandleBox(HANDLE);
     unsafe impl Send for HandleBox {}
@@ -187,25 +317,13 @@ mod platform {
     }
 
     fn shell_command_line(kind: LocalShellKind) -> Vec<u16> {
-        let cmd = match kind {
-            LocalShellKind::PowerShell => {
-                if std::process::Command::new("pwsh.exe")
-                    .arg("--version")
-                    .output()
-                    .is_ok()
-                {
-                    "pwsh.exe -NoLogo"
-                } else {
-                    "powershell.exe -NoLogo"
-                }
-            }
-            LocalShellKind::Cmd => "cmd.exe",
-            LocalShellKind::Wsl => "wsl.exe",
+        let (exe, args) = resolve_shell_spec(kind);
+        let cmd = if args.is_empty() {
+            exe.to_owned()
+        } else {
+            format!("{exe} {args}")
         };
-        std::ffi::OsStr::new(cmd)
-            .encode_wide()
-            .chain(Some(0))
-            .collect()
+        to_wide(&cmd)
     }
 
     pub fn spawn_conpty(
@@ -366,6 +484,18 @@ mod platform {
 mod platform {
     use super::*;
 
+    pub fn is_process_elevated() -> bool {
+        false
+    }
+
+    pub fn relaunch_as_admin() -> Result<(), AppError> {
+        Err(AppError::Validation("仅 Windows 支持以管理员权限重启".into()))
+    }
+
+    pub fn spawn_elevated_shell(_kind: LocalShellKind) -> Result<(), AppError> {
+        Err(AppError::Validation("仅 Windows 支持以管理员权限启动本地终端".into()))
+    }
+
     pub struct LocalPtySession {
         pub events: broadcast::Sender<SessionEvent>,
     }
@@ -428,5 +558,15 @@ mod tests {
             !out.is_empty(),
             "ConPTY should capture local shell output instead of leaking to parent stdio"
         );
+    }
+
+    #[test]
+    fn shell_resolution_and_elevation_check_succeed() {
+        let _ = is_process_elevated();
+        let (pwsh_exe, pwsh_args) = platform::resolve_shell_spec(LocalShellKind::PowerShell);
+        assert!(pwsh_exe == "pwsh.exe" || pwsh_exe == "powershell.exe");
+        assert_eq!(pwsh_args, "-NoLogo");
+        assert_eq!(platform::resolve_shell_spec(LocalShellKind::Cmd), ("cmd.exe", ""));
+        assert_eq!(platform::resolve_shell_spec(LocalShellKind::Wsl), ("wsl.exe", ""));
     }
 }

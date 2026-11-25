@@ -1,4 +1,5 @@
 import { api, friendlyError } from "../api.ts";
+import { onLanguageChange, t } from "../i18n/index.ts";
 import { icon } from "../icons.ts";
 import { getActiveSession } from "../state.ts";
 import type { DiffStatus, FileDiffEntry, LocalEntry, RemoteEntry } from "../types.ts";
@@ -13,17 +14,17 @@ let onlyShowDiffs = false;
 function diffBadge(status: DiffStatus): string {
   switch (status) {
     case "only_local":
-      return '<span class="diff-pill only-local">仅本地</span>';
+      return `<span class="diff-pill only-local">${escapeHtml(t("dual.diffOnlyLocal"))}</span>`;
     case "only_remote":
-      return '<span class="diff-pill only-remote">仅远端</span>';
+      return `<span class="diff-pill only-remote">${escapeHtml(t("dual.diffOnlyRemote"))}</span>`;
     case "newer_local":
-      return '<span class="diff-pill diff-warn">本地较新</span>';
+      return `<span class="diff-pill diff-warn">${escapeHtml(t("dual.diffNewerLocal"))}</span>`;
     case "newer_remote":
-      return '<span class="diff-pill diff-warn">远端较新</span>';
+      return `<span class="diff-pill diff-warn">${escapeHtml(t("dual.diffNewerRemote"))}</span>`;
     case "size_diff":
-      return '<span class="diff-pill diff-warn">大小不同</span>';
+      return `<span class="diff-pill diff-warn">${escapeHtml(t("dual.diffSizeDiff"))}</span>`;
     case "same":
-      return '<span class="diff-pill same">一致</span>';
+      return `<span class="diff-pill same">${escapeHtml(t("dual.diffSame"))}</span>`;
   }
 }
 
@@ -40,11 +41,11 @@ function renderDualLists(): void {
         .map(item => {
           const uploadBtn =
             !item.is_dir && item.local_path
-              ? `<button type="button" class="icon-button" data-sync-up="${escapeHtml(item.name)}" title="上传到远端">${icon("upload")}</button>`
+              ? `<button type="button" class="icon-button" data-sync-up="${escapeHtml(item.name)}" title="${escapeHtml(t("dual.uploadToRemote"))}">${icon("upload")}</button>`
               : "";
           const downloadBtn =
             !item.is_dir && item.remote_path
-              ? `<button type="button" class="icon-button" data-sync-down="${escapeHtml(item.name)}" title="下载到本地">${icon("download")}</button>`
+              ? `<button type="button" class="icon-button" data-sync-down="${escapeHtml(item.name)}" title="${escapeHtml(t("dual.downloadToLocal"))}">${icon("download")}</button>`
               : "";
           return `
             <div class="dual-diff-row">
@@ -65,7 +66,7 @@ function renderDualLists(): void {
             </div>
           `;
         })
-        .join("") || '<div class="empty-drawer">两边目录完全一致</div>';
+        .join("") || `<div class="empty-drawer">${escapeHtml(t("dual.diffAllSame"))}</div>`;
 
     $("#dual-panes-grid").classList.add("hidden");
     $("#dual-diff-view").classList.remove("hidden");
@@ -85,12 +86,12 @@ function renderDualLists(): void {
               <span class="file-icon-badge ${entry.is_dir ? "is-dir" : ""}">${icon(entry.is_dir ? "folder" : "file")}</span>
               <span>${escapeHtml(entry.name)}</span>
             </button>
-            <small>${entry.is_dir ? "目录" : formatBytes(entry.size)}</small>
-            ${entry.is_dir ? "" : `<button type="button" class="icon-button" data-dual-upload="${escapeHtml(entry.path)}" title="上传到右侧远端">${icon("upload")}</button>`}
+            <small>${entry.is_dir ? escapeHtml(t("common.dir")) : formatBytes(entry.size)}</small>
+            ${entry.is_dir ? "" : `<button type="button" class="icon-button" data-dual-upload="${escapeHtml(entry.path)}" title="${escapeHtml(t("dual.uploadToRight"))}">${icon("upload")}</button>`}
           </div>
         `,
       )
-      .join("") || '<div class="empty-drawer">本地目录为空</div>';
+      .join("") || `<div class="empty-drawer">${escapeHtml(t("dual.emptyLocal"))}</div>`;
 
   $("#dual-remote-list").innerHTML =
     currentRemoteEntries
@@ -101,12 +102,12 @@ function renderDualLists(): void {
               <span class="file-icon-badge ${entry.is_dir ? "is-dir" : ""}">${icon(entry.is_dir ? "folder" : "file")}</span>
               <span>${escapeHtml(entry.name)}</span>
             </button>
-            <small>${entry.is_dir ? "目录" : formatBytes(entry.size)}</small>
-            ${entry.is_dir ? "" : `<button type="button" class="icon-button" data-dual-download="${escapeHtml(entry.path)}" data-name="${escapeHtml(entry.name)}" title="下载到左侧本地">${icon("download")}</button>`}
+            <small>${entry.is_dir ? escapeHtml(t("common.dir")) : formatBytes(entry.size)}</small>
+            ${entry.is_dir ? "" : `<button type="button" class="icon-button" data-dual-download="${escapeHtml(entry.path)}" data-name="${escapeHtml(entry.name)}" title="${escapeHtml(t("dual.downloadToLeft"))}">${icon("download")}</button>`}
           </div>
         `,
       )
-      .join("") || '<div class="empty-drawer">远端目录为空</div>';
+      .join("") || `<div class="empty-drawer">${escapeHtml(t("dual.emptyRemote"))}</div>`;
 }
 
 export async function refreshDualPane(): Promise<void> {
@@ -117,7 +118,7 @@ export async function refreshDualPane(): Promise<void> {
   try {
     const quick = await api.localQuickPaths();
     $("#dual-local-quick").innerHTML =
-      '<option value="">快捷路径…</option>' +
+      `<option value="">${escapeHtml(t("dual.quickPathOpt"))}</option>` +
       quick.map(([label, path]) => `<option value="${escapeHtml(path)}">${escapeHtml(label)}</option>`).join("");
 
     const [resolvedLocal, localEntries] = await api.listLocalDirectory(session.localPath);
@@ -136,6 +137,12 @@ export async function refreshDualPane(): Promise<void> {
 }
 
 export function initDualFilesUI(): void {
+  onLanguageChange(() => {
+    const firstOpt = document.querySelector<HTMLOptionElement>("#dual-local-quick option[value='']");
+    if (firstOpt) firstOpt.textContent = t("dual.quickPathOpt");
+    const session = getActiveSession();
+    if (session && session.mode === "dual") renderDualLists();
+  });
   $("#dual-local-quick").addEventListener("change", event => {
     const val = (event.target as HTMLSelectElement).value;
     const session = getActiveSession();
@@ -188,7 +195,7 @@ export function initDualFilesUI(): void {
     try {
       currentDiffs = await api.compareLocalRemote(session.id, session.localPath, session.path);
       renderDualLists();
-      notify(`差异对比完成 · 共 ${currentDiffs.length} 项`);
+      notify(t("dual.compareDone", { count: currentDiffs.length }));
     } catch (error) {
       notify(friendlyError(error), true);
     }
@@ -213,10 +220,10 @@ export function initDualFilesUI(): void {
       )
       .map(d => d.local_path!);
     if (!targets.length) {
-      notify("没有需要上传同步的文件");
+      notify(t("dual.noUploadSync"));
       return;
     }
-    if (!window.confirm(`确认将 ${targets.length} 个本地新增/差异文件上传同步到远端 ${session.path}？`)) {
+    if (!window.confirm(t("dual.confirmSyncUp", { count: targets.length, path: session.path }))) {
       return;
     }
     await startFileUploads(session, targets, session.path);
@@ -230,10 +237,10 @@ export function initDualFilesUI(): void {
       d => !d.is_dir && d.remote_path && (d.status === "only_remote" || d.status === "newer_remote" || d.status === "size_diff"),
     );
     if (!targets.length) {
-      notify("没有需要下载同步的文件");
+      notify(t("dual.noDownloadSync"));
       return;
     }
-    if (!window.confirm(`确认将 ${targets.length} 个远端新增/差异文件下载同步到本地 ${session.localPath}？`)) {
+    if (!window.confirm(t("dual.confirmSyncDown", { count: targets.length, path: session.localPath }))) {
       return;
     }
     const sep = session.localPath.includes("\\") ? "\\" : "/";

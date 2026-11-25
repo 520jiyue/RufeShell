@@ -230,6 +230,7 @@ impl Default for AlertRule {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TerminalSettings {
+    pub language: String,
     pub font_family: String,
     pub font_size: u16,
     pub theme: String,
@@ -252,6 +253,7 @@ pub struct TerminalSettings {
 impl Default for TerminalSettings {
     fn default() -> Self {
         Self {
+            language: "zh-CN".into(),
             font_family: "\"Cascadia Mono\", Consolas, monospace".into(),
             font_size: 14,
             theme: "obsidian-emerald".into(),

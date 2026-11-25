@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { t } from "./i18n/index.ts";
 import type {
   ConflictPolicy,
   Connection,
@@ -63,6 +64,10 @@ export const api = {
   }) => invoke<string>("connect", params),
   connectSaved: (profileId: string, timeoutSecs?: number | null) =>
     invoke<string>("connect_saved", { profileId, timeoutSecs: timeoutSecs ?? null }),
+  isElevated: () => invoke<boolean>("is_elevated"),
+  relaunchAsAdmin: () => invoke<void>("relaunch_as_admin"),
+  openElevatedLocalTerminal: (kind: LocalShellKind) =>
+    invoke<void>("open_elevated_local_terminal", { kind }),
   openLocalTerminal: (kind: LocalShellKind) =>
     invoke<string>("open_local_terminal", { kind }),
   sessionStatus: (sessionId: string) => invoke<Status>("session_status", { sessionId }),
@@ -174,30 +179,30 @@ export const api = {
 };
 
 export const dialogs = {
-  pickPrivateKey: () => open({ multiple: false, title: "选择 OpenSSH 私钥" }),
-  pickUploadFile: () => open({ multiple: true, title: "选择要上传的文件" }),
-  pickUploadDirectory: () => open({ directory: true, multiple: false, title: "选择要上传的文件夹" }),
-  pickDownloadDirectory: () => open({ directory: true, multiple: false, title: "选择下载保存目录" }),
-  pickSavePath: (defaultPath: string) => save({ defaultPath, title: "保存远程文件" }),
+  pickPrivateKey: () => open({ multiple: false, title: t("dialog.pickKey") }),
+  pickUploadFile: () => open({ multiple: true, title: t("dialog.pickUploadFiles") }),
+  pickUploadDirectory: () => open({ directory: true, multiple: false, title: t("dialog.pickUploadDir") }),
+  pickDownloadDirectory: () => open({ directory: true, multiple: false, title: t("dialog.pickDownloadDir") }),
+  pickSavePath: (defaultPath: string) => save({ defaultPath, title: t("dialog.pickSaveFile") }),
   pickExportPath: () =>
     save({
       defaultPath: "rufeshell-connections.json",
-      title: "导出连接配置（不含密码）",
-      filters: [{ name: "JSON 配置", extensions: ["json"] }],
+      title: t("dialog.pickExport"),
+      filters: [{ name: t("dialog.filterJson"), extensions: ["json"] }],
     }),
   pickImportPath: () =>
     open({
       multiple: false,
-      title: "导入连接配置",
-      filters: [{ name: "JSON 配置", extensions: ["json"] }],
+      title: t("dialog.pickImport"),
+      filters: [{ name: t("dialog.filterJson"), extensions: ["json"] }],
     }),
   pickLogSavePath: (defaultName: string) =>
     save({
       defaultPath: defaultName,
-      title: "保存终端输出日志",
+      title: t("dialog.pickLogSave"),
       filters: [
-        { name: "日志文件", extensions: ["log", "txt"] },
-        { name: "所有文件", extensions: ["*"] },
+        { name: t("dialog.filterLogs"), extensions: ["log", "txt"] },
+        { name: t("dialog.filterAll"), extensions: ["*"] },
       ],
     }),
 };

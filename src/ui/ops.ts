@@ -1,4 +1,5 @@
 import { api, friendlyError } from "../api.ts";
+import { formatLocaleClock, onLanguageChange, t } from "../i18n/index.ts";
 import { icon } from "../icons.ts";
 import { getActiveSession, persistWorkbenchState, state } from "../state.ts";
 import type {
@@ -68,19 +69,19 @@ function renderTrendsView(session: Session): void {
           <label class="check-pill">
             <input type="checkbox" data-rule-enabled="${escapeHtml(rule.id)}" ${rule.enabled ? "checked" : ""} />
             <select data-rule-metric="${escapeHtml(rule.id)}">
-              <option value="cpu" ${rule.metric === "cpu" ? "selected" : ""}>CPU</option>
-              <option value="memory" ${rule.metric === "memory" ? "selected" : ""}>内存</option>
-              <option value="disk" ${rule.metric === "disk" ? "selected" : ""}>磁盘</option>
-              <option value="swap" ${rule.metric === "swap" ? "selected" : ""}>交换</option>
+              <option value="cpu" ${rule.metric === "cpu" ? "selected" : ""}>${escapeHtml(t("ops.metricOptCpu"))}</option>
+              <option value="memory" ${rule.metric === "memory" ? "selected" : ""}>${escapeHtml(t("ops.metricOptMem"))}</option>
+              <option value="disk" ${rule.metric === "disk" ? "selected" : ""}>${escapeHtml(t("ops.metricOptDisk"))}</option>
+              <option value="swap" ${rule.metric === "swap" ? "selected" : ""}>${escapeHtml(t("ops.metricOptSwap"))}</option>
             </select>
           </label>
           <span class="rule-op">&gt;</span>
-          <input type="number" min="10" max="99" value="${rule.threshold}" data-rule-threshold="${escapeHtml(rule.id)}" aria-label="告警阈值%" />
+          <input type="number" min="10" max="99" value="${rule.threshold}" data-rule-threshold="${escapeHtml(rule.id)}" />
           <span>%</span>
-          <span class="rule-cool-label">冷却</span>
-          <input type="number" min="5" max="3600" value="${rule.cooldown_secs}" data-rule-cooldown="${escapeHtml(rule.id)}" aria-label="冷却秒数" />
-          <span>秒</span>
-          <button type="button" class="icon-button" data-rule-del="${escapeHtml(rule.id)}" title="删除规则">${icon("trash")}</button>
+          <span class="rule-cool-label">${escapeHtml(t("ops.alertCooldown"))}</span>
+          <input type="number" min="5" max="3600" value="${rule.cooldown_secs}" data-rule-cooldown="${escapeHtml(rule.id)}" />
+          <span>${escapeHtml(t("ops.alertSec"))}</span>
+          <button type="button" class="icon-button" data-rule-del="${escapeHtml(rule.id)}" title="${escapeHtml(t("ops.alertRuleDel"))}">${icon("trash")}</button>
         </div>
       `,
     )
@@ -92,33 +93,33 @@ function renderTrendsView(session: Session): void {
       log => `
         <div class="alert-log-row">
           <span class="alert-badge">${escapeHtml(log.metric.toUpperCase())}</span>
-          <span>${escapeHtml(log.server_name)} 达到 <strong>${log.value.toFixed(1)}%</strong>（阈值 ${log.threshold}%）</span>
-          <small>${new Date(log.timestamp * 1000).toLocaleTimeString("zh-CN", { hour12: false })}</small>
+          <span>${t("ops.alertLogItem", { server: escapeHtml(log.server_name), value: log.value.toFixed(1), threshold: log.threshold })}</span>
+          <small>${formatLocaleClock(new Date(log.timestamp * 1000))}</small>
         </div>
       `,
     )
-    .join("") || '<div class="empty-drawer small-pad">暂无触发的告警记录</div>';
+    .join("") || `<div class="empty-drawer small-pad">${escapeHtml(t("ops.alertNoLogs"))}</div>`;
 
   $("#ops-trends-panel").innerHTML = `
     <div class="ops-trends-grid">
       <div class="ops-chart-card">
         <div class="ops-chart-head">
-          <span>CPU 历史趋势 (${series.length} 点)</span>
-          <strong>当前 ${latest ? latest.cpu.toFixed(1) : "0.0"}% · 峰值 ${peaks.cpu.toFixed(1)}%</strong>
+          <span>${escapeHtml(t("ops.trendCpuTitle", { count: series.length }))}</span>
+          <strong>${escapeHtml(t("ops.trendCurrentPeak", { cur: latest ? latest.cpu.toFixed(1) : "0.0", peak: peaks.cpu.toFixed(1) }))}</strong>
         </div>
         ${renderChartSvg(series.map(p => p.cpu), 100, "var(--accent)")}
       </div>
       <div class="ops-chart-card">
         <div class="ops-chart-head">
-          <span>内存历史趋势</span>
-          <strong>当前 ${latest ? latest.memory.toFixed(1) : "0.0"}% · 峰值 ${peaks.memory.toFixed(1)}%</strong>
+          <span>${escapeHtml(t("ops.trendMemTitle"))}</span>
+          <strong>${escapeHtml(t("ops.trendCurrentPeak", { cur: latest ? latest.memory.toFixed(1) : "0.0", peak: peaks.memory.toFixed(1) }))}</strong>
         </div>
         ${renderChartSvg(series.map(p => p.memory), 100, "var(--sky)")}
       </div>
       <div class="ops-chart-card">
         <div class="ops-chart-head">
-          <span>网络吞吐趋势 (↓ 接收 / ↑ 发送)</span>
-          <strong>峰值 ↓${formatBytes(peaks.rxRate)}/s · ↑${formatBytes(peaks.txRate)}/s</strong>
+          <span>${escapeHtml(t("ops.trendNetTitle"))}</span>
+          <strong>${escapeHtml(t("ops.trendNetNow", { rx: formatBytes(peaks.rxRate), tx: formatBytes(peaks.txRate) }))}</strong>
         </div>
         ${renderChartSvg(
           series.map(p => p.rxRate),
@@ -130,8 +131,8 @@ function renderTrendsView(session: Session): void {
       </div>
       <div class="ops-chart-card">
         <div class="ops-chart-head">
-          <span>根目录磁盘趋势</span>
-          <strong>当前 ${latest ? latest.disk.toFixed(1) : "0.0"}% · 峰值 ${peaks.disk.toFixed(1)}%</strong>
+          <span>${escapeHtml(t("ops.trendDiskTitle"))}</span>
+          <strong>${escapeHtml(t("ops.trendCurrentPeak", { cur: latest ? latest.disk.toFixed(1) : "0.0", peak: peaks.disk.toFixed(1) }))}</strong>
         </div>
         ${renderChartSvg(series.map(p => p.disk), 100, "var(--warn)")}
       </div>
@@ -140,15 +141,15 @@ function renderTrendsView(session: Session): void {
     <div class="ops-alerts-grid">
       <section class="ops-subcard">
         <div class="ops-subcard-head">
-          <h3>${icon("bell")} 告警规则（带冷却防抖）</h3>
-          <button id="add-alert-rule-btn" type="button" class="subtle">${icon("plus")} 添加规则</button>
+          <h3>${icon("bell")} ${escapeHtml(t("ops.alertRulesTitle"))}</h3>
+          <button id="add-alert-rule-btn" type="button" class="subtle">${icon("plus")} ${escapeHtml(t("ops.alertAddRule"))}</button>
         </div>
         <div id="alert-rules-list">${rulesHtml}</div>
       </section>
       <section class="ops-subcard">
         <div class="ops-subcard-head">
-          <h3>最近告警日志</h3>
-          <button id="clear-alert-logs-btn" type="button" class="subtle">清空</button>
+          <h3>${escapeHtml(t("ops.alertLogsTitle"))}</h3>
+          <button id="clear-alert-logs-btn" type="button" class="subtle">${escapeHtml(t("ops.alertClear"))}</button>
         </div>
         <div class="alert-logs-list">${logsHtml}</div>
       </section>
@@ -230,13 +231,13 @@ function renderProcessesList(): void {
             <span class="mono">${escapeHtml(p.stat)}</span>
             <span class="ops-cmd-cell" title="${escapeHtml(p.command)}">${escapeHtml(p.command)}</span>
             <div class="ops-row-actions">
-              <button type="button" class="subtle" data-proc-term="${p.pid}" data-cmd="${escapeHtml(p.command)}">结束</button>
-              <button type="button" class="subtle danger-ghost" data-proc-kill="${p.pid}" data-cmd="${escapeHtml(p.command)}">强杀</button>
+              <button type="button" class="subtle" data-proc-term="${p.pid}" data-cmd="${escapeHtml(p.command)}" title="${escapeHtml(t("ops.procEndTitle"))}">${escapeHtml(t("ops.procEnd"))}</button>
+              <button type="button" class="subtle danger-ghost" data-proc-kill="${p.pid}" data-cmd="${escapeHtml(p.command)}" title="${escapeHtml(t("ops.procKillTitle"))}">${escapeHtml(t("ops.procKill"))}</button>
             </div>
           </div>
         `,
       )
-      .join("") || '<div class="empty-drawer">没有匹配的进程</div>';
+      .join("") || `<div class="empty-drawer">${escapeHtml(t("ops.procEmpty"))}</div>`;
 }
 
 function renderServicesList(): void {
@@ -259,18 +260,18 @@ function renderServicesList(): void {
             <span><span class="state-pill ${svc.active}">${escapeHtml(svc.active)}/${escapeHtml(svc.sub)}</span></span>
             <span class="ops-cmd-cell" title="${escapeHtml(svc.description)}">${escapeHtml(svc.description)}</span>
             <div class="ops-row-actions">
-              <button type="button" class="subtle" data-svc-logs="${escapeHtml(svc.unit)}">日志</button>
+              <button type="button" class="subtle" data-svc-logs="${escapeHtml(svc.unit)}">${escapeHtml(t("common.logs"))}</button>
               ${
                 running
-                  ? `<button type="button" class="subtle" data-svc-act="restart" data-unit="${escapeHtml(svc.unit)}">重启</button>
-                     <button type="button" class="subtle danger-ghost" data-svc-act="stop" data-unit="${escapeHtml(svc.unit)}">停止</button>`
-                  : `<button type="button" class="primary" data-svc-act="start" data-unit="${escapeHtml(svc.unit)}">启动</button>`
+                  ? `<button type="button" class="subtle" data-svc-act="restart" data-unit="${escapeHtml(svc.unit)}">${escapeHtml(t("common.restart"))}</button>
+                     <button type="button" class="subtle danger-ghost" data-svc-act="stop" data-unit="${escapeHtml(svc.unit)}">${escapeHtml(t("common.stop"))}</button>`
+                  : `<button type="button" class="primary" data-svc-act="start" data-unit="${escapeHtml(svc.unit)}">${escapeHtml(t("common.start"))}</button>`
               }
             </div>
           </div>
         `;
       })
-      .join("") || '<div class="empty-drawer">未发现匹配的 systemd 服务</div>';
+      .join("") || `<div class="empty-drawer">${escapeHtml(t("ops.svcEmpty"))}</div>`;
 }
 
 function parseDockerStatus(statusText: string): { main: string; detail: string; health: string } {
@@ -290,7 +291,7 @@ function parseDockerStatus(statusText: string): { main: string; detail: string; 
 
 function renderDockerPorts(portsText: string): string {
   const raw = portsText.trim();
-  if (!raw) return '<span class="docker-port-empty">未暴露端口</span>';
+  if (!raw) return `<span class="docker-port-empty">${escapeHtml(t("ops.dockerNoPorts"))}</span>`;
   const items = raw
     .split(",")
     .map(p => p.trim())
@@ -313,7 +314,7 @@ function renderDockerList(): void {
   const runningTotal = cachedDocker.filter(c => c.state.toLowerCase() === "running").length;
   const summaryEl = document.querySelector<HTMLElement>("#ops-docker-summary");
   if (summaryEl) {
-    summaryEl.textContent = `运行 ${runningTotal} / 共 ${cachedDocker.length}`;
+    summaryEl.textContent = t("ops.dockerSummary", { running: runningTotal, total: cachedDocker.length });
   }
 
   const filtered = cachedDocker.filter(c => {
@@ -362,18 +363,18 @@ function renderDockerList(): void {
             ${resHtml}
             ${renderDockerPorts(c.ports)}
             <div class="ops-row-actions">
-              <button type="button" class="subtle" data-docker-logs="${escapeHtml(c.id)}" data-name="${escapeHtml(c.name)}">日志</button>
+              <button type="button" class="subtle" data-docker-logs="${escapeHtml(c.id)}" data-name="${escapeHtml(c.name)}">${escapeHtml(t("common.logs"))}</button>
               ${
                 running
-                  ? `<button type="button" class="subtle" data-docker-act="restart" data-id="${escapeHtml(c.id)}">重启</button>
-                     <button type="button" class="subtle danger-ghost" data-docker-act="stop" data-id="${escapeHtml(c.id)}">停止</button>`
-                  : `<button type="button" class="primary" data-docker-act="start" data-id="${escapeHtml(c.id)}">启动</button>`
+                  ? `<button type="button" class="subtle" data-docker-act="restart" data-id="${escapeHtml(c.id)}">${escapeHtml(t("common.restart"))}</button>
+                     <button type="button" class="subtle danger-ghost" data-docker-act="stop" data-id="${escapeHtml(c.id)}">${escapeHtml(t("common.stop"))}</button>`
+                  : `<button type="button" class="primary" data-docker-act="start" data-id="${escapeHtml(c.id)}">${escapeHtml(t("common.start"))}</button>`
               }
             </div>
           </div>
         `;
       })
-      .join("") || '<div class="empty-drawer">未发现匹配的 Docker 容器</div>';
+      .join("") || `<div class="empty-drawer">${escapeHtml(t("ops.dockerEmpty"))}</div>`;
 }
 
 function renderForwardsList(): void {
@@ -381,28 +382,32 @@ function renderForwardsList(): void {
     cachedForwards
       .map(rule => {
         const kindLabel =
-          rule.kind === "local" ? "本地 (-L)" : rule.kind === "remote" ? "远程 (-R)" : "动态 SOCKS5 (-D)";
+          rule.kind === "local"
+            ? t("ops.fwdLabelLocal")
+            : rule.kind === "remote"
+              ? t("ops.fwdLabelRemote")
+              : t("ops.fwdLabelDynamic");
         const routeText =
           rule.kind === "dynamic"
-            ? `${rule.bind_host}:${rule.bind_port} (SOCKS5 代理)`
+            ? `${rule.bind_host}:${rule.bind_port} ${t("ops.fwdSocksProxy")}`
             : `${rule.bind_host}:${rule.bind_port} → ${rule.target_host}:${rule.target_port}`;
         return `
           <div class="ops-table-row fwd-cols">
-            <span class="state-pill ${rule.active ? "active" : "inactive"}">${kindLabel}</span>
+            <span class="state-pill ${rule.active ? "active" : "inactive"}">${escapeHtml(kindLabel)}</span>
             <span class="mono">${escapeHtml(routeText)}</span>
-            <span class="mono">连接 ${rule.active_connections} · ↑${formatBytes(rule.bytes_sent)} ↓${formatBytes(rule.bytes_received)}</span>
+            <span class="mono">${escapeHtml(t("ops.fwdConns", { count: rule.active_connections }))} · ↑${formatBytes(rule.bytes_sent)} ↓${formatBytes(rule.bytes_received)}</span>
             <div class="ops-row-actions">
               ${
                 rule.active
-                  ? `<button type="button" class="subtle" data-fwd-stop="${rule.id}">停止</button>`
-                  : `<button type="button" class="primary" data-fwd-start="${rule.id}">启动</button>`
+                  ? `<button type="button" class="subtle" data-fwd-stop="${rule.id}">${escapeHtml(t("common.stop"))}</button>`
+                  : `<button type="button" class="primary" data-fwd-start="${rule.id}">${escapeHtml(t("common.start"))}</button>`
               }
-              <button type="button" class="subtle danger-ghost" data-fwd-del="${rule.id}">删除</button>
+              <button type="button" class="subtle danger-ghost" data-fwd-del="${rule.id}">${escapeHtml(t("common.delete"))}</button>
             </div>
           </div>
         `;
       })
-      .join("") || '<div class="empty-drawer">暂无端口转发规则，上方可添加本地、远程或 SOCKS5 动态转发</div>';
+      .join("") || `<div class="empty-drawer">${escapeHtml(t("ops.fwdEmpty"))}</div>`;
 }
 
 export async function refreshActiveOpsTab(): Promise<void> {
@@ -450,11 +455,20 @@ export function refreshTrendsIfVisible(sessionId: string): void {
 
 function showOpsLogsModal(title: string, content: string): void {
   $("#ops-log-title").textContent = title;
-  $("#ops-log-content").textContent = content || "（暂无日志输出）";
+  $("#ops-log-content").textContent = content || t("opsLog.empty");
   $<HTMLDialogElement>("#ops-log-dialog").showModal();
 }
 
 export function initOpsUI(): void {
+  onLanguageChange(() => {
+    const session = getActiveSession();
+    if (!session || session.mode !== "ops") return;
+    if (session.opsTab === "trends") renderTrendsView(session);
+    else if (session.opsTab === "processes") renderProcessesList();
+    else if (session.opsTab === "services") renderServicesList();
+    else if (session.opsTab === "docker") renderDockerList();
+    else if (session.opsTab === "forwards") renderForwardsList();
+  });
   document.querySelectorAll<HTMLButtonElement>("[data-ops-tab]").forEach(btn =>
     btn.addEventListener("click", () => {
       const session = getActiveSession();
@@ -481,14 +495,18 @@ export function initOpsUI(): void {
     const cmd = btn.dataset.cmd ?? "";
     if (
       !window.confirm(
-        `危险操作确认：确定要${force ? "强制杀死 (SIGKILL -9)" : "优雅结束 (SIGTERM -15)"} 进程 PID ${pid}？\n命令：${cmd}`,
+        t("ops.procConfirm", {
+          action: t(force ? "ops.procActionKill" : "ops.procActionTerm"),
+          pid,
+          cmd,
+        }),
       )
     ) {
       return;
     }
     try {
       await api.killProcess(session.id, pid, force);
-      notify(`已向进程 ${pid} 发送${force ? "强杀" : "结束"}信号`);
+      notify(t("ops.procSignaled", { pid, kind: t(force ? "ops.procSignalKill" : "ops.procSignalTerm") }));
       await refreshActiveOpsTab();
     } catch (error) {
       notify(friendlyError(error), true);
@@ -508,7 +526,7 @@ export function initOpsUI(): void {
       const unit = logsBtn.dataset.svcLogs!;
       try {
         const text = await api.readSystemdLogs(session.id, unit, 150);
-        showOpsLogsModal(`服务日志 · ${unit}`, text);
+        showOpsLogsModal(t("ops.svcLogTitle", { unit }), text);
       } catch (error) {
         notify(friendlyError(error), true);
       }
@@ -518,12 +536,12 @@ export function initOpsUI(): void {
     if (actBtn) {
       const unit = actBtn.dataset.unit!;
       const action = actBtn.dataset.svcAct!;
-      if (action !== "start" && !window.confirm(`确定要对服务 ${unit} 执行 ${action}？`)) {
+      if (action !== "start" && !window.confirm(t("ops.svcConfirm", { unit, action }))) {
         return;
       }
       try {
         await api.controlSystemdService(session.id, unit, action);
-        notify(`服务 ${unit} 已执行 ${action}`);
+        notify(t("ops.svcActDone", { unit, action }));
         await refreshActiveOpsTab();
       } catch (error) {
         notify(friendlyError(error), true);
@@ -545,7 +563,7 @@ export function initOpsUI(): void {
       const name = logsBtn.dataset.name!;
       try {
         const text = await api.readDockerLogs(session.id, cid, 200);
-        showOpsLogsModal(`容器日志 · ${name}`, text);
+        showOpsLogsModal(t("ops.dockerLogTitle", { name }), text);
       } catch (error) {
         notify(friendlyError(error), true);
       }
@@ -555,12 +573,12 @@ export function initOpsUI(): void {
     if (actBtn) {
       const cid = actBtn.dataset.id!;
       const action = actBtn.dataset.dockerAct!;
-      if (action !== "start" && !window.confirm(`确定要对容器 ${cid} 执行 ${action}？`)) {
+      if (action !== "start" && !window.confirm(t("ops.dockerConfirm", { action }))) {
         return;
       }
       try {
         await api.controlDockerContainer(session.id, cid, action);
-        notify(`容器 ${cid} 已执行 ${action}`);
+        notify(t("ops.dockerActDone", { action }));
         await refreshActiveOpsTab();
       } catch (error) {
         notify(friendlyError(error), true);
@@ -589,7 +607,7 @@ export function initOpsUI(): void {
         target_host: $<HTMLInputElement>("#fwd-target-host").value || "127.0.0.1",
         target_port: Number($<HTMLInputElement>("#fwd-target-port").value) || 0,
       });
-      notify("端口转发规则已启动");
+      notify(t("ops.fwdAdded"));
       await refreshActiveOpsTab();
     } catch (error) {
       notify(friendlyError(error), true);
@@ -604,15 +622,15 @@ export function initOpsUI(): void {
     try {
       if (stopBtn) {
         await api.stopForward(stopBtn.dataset.fwdStop!);
-        notify("端口转发已停止");
+        notify(t("ops.fwdStopped"));
         await refreshActiveOpsTab();
       } else if (startBtn) {
         await api.startForward(startBtn.dataset.fwdStart!);
-        notify("端口转发已启动");
+        notify(t("ops.fwdStarted"));
         await refreshActiveOpsTab();
       } else if (delBtn) {
         await api.removeForward(delBtn.dataset.fwdDel!);
-        notify("端口转发规则已删除");
+        notify(t("ops.fwdRemoved"));
         await refreshActiveOpsTab();
       }
     } catch (error) {

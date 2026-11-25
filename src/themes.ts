@@ -1,9 +1,10 @@
 import type { ITheme } from "@xterm/xterm";
+import { t, type TranslationKey } from "./i18n/index.ts";
 import type { TerminalThemeId } from "./types.ts";
 
 export interface TerminalThemeOption {
   id: TerminalThemeId;
-  label: string;
+  labelKey: TranslationKey;
   appearance: "dark" | "light";
   theme: ITheme;
 }
@@ -11,7 +12,7 @@ export interface TerminalThemeOption {
 export const TERMINAL_THEMES: TerminalThemeOption[] = [
   {
     id: "obsidian-emerald",
-    label: "深翠黑曜 (默认深色)",
+    labelKey: "theme.obsidianEmerald",
     appearance: "dark",
     theme: {
       background: "#0a0e10",
@@ -34,7 +35,7 @@ export const TERMINAL_THEMES: TerminalThemeOption[] = [
   },
   {
     id: "tokyo-night",
-    label: "Tokyo Night (深蓝)",
+    labelKey: "theme.tokyoNight",
     appearance: "dark",
     theme: {
       background: "#16161e",
@@ -57,7 +58,7 @@ export const TERMINAL_THEMES: TerminalThemeOption[] = [
   },
   {
     id: "dracula",
-    label: "Dracula (暗紫)",
+    labelKey: "theme.dracula",
     appearance: "dark",
     theme: {
       background: "#191a21",
@@ -80,7 +81,7 @@ export const TERMINAL_THEMES: TerminalThemeOption[] = [
   },
   {
     id: "github-dark",
-    label: "GitHub Dark (深灰)",
+    labelKey: "theme.githubDark",
     appearance: "dark",
     theme: {
       background: "#0d1117",
@@ -103,7 +104,7 @@ export const TERMINAL_THEMES: TerminalThemeOption[] = [
   },
   {
     id: "morning-mist",
-    label: "晨雾清白 (浅色)",
+    labelKey: "theme.morningMist",
     appearance: "light",
     theme: {
       background: "#ffffff",
@@ -126,7 +127,7 @@ export const TERMINAL_THEMES: TerminalThemeOption[] = [
   },
   {
     id: "solarized-light",
-    label: "Solarized Light (暖米浅色)",
+    labelKey: "theme.solarizedLight",
     appearance: "light",
     theme: {
       background: "#fdf6e3",
@@ -149,7 +150,7 @@ export const TERMINAL_THEMES: TerminalThemeOption[] = [
   },
   {
     id: "catppuccin-latte",
-    label: "Catppuccin Latte (柔白浅色)",
+    labelKey: "theme.catppuccinLatte",
     appearance: "light",
     theme: {
       background: "#eff1f5",
@@ -173,12 +174,20 @@ export const TERMINAL_THEMES: TerminalThemeOption[] = [
 ];
 
 export const FONT_PRESETS = [
-  { label: "Cascadia Mono", value: '"Cascadia Mono", Consolas, monospace' },
-  { label: "Consolas", value: 'Consolas, "Courier New", monospace' },
-  { label: "JetBrains Mono", value: '"JetBrains Mono", "Cascadia Mono", Consolas, monospace' },
-  { label: "Fira Code", value: '"Fira Code", "Cascadia Mono", Consolas, monospace' },
-  { label: "系统等宽", value: "monospace" },
+  { label: "Cascadia Mono", labelKey: null, value: '"Cascadia Mono", Consolas, monospace' },
+  { label: "Consolas", labelKey: null, value: 'Consolas, "Courier New", monospace' },
+  { label: "JetBrains Mono", labelKey: null, value: '"JetBrains Mono", "Cascadia Mono", Consolas, monospace' },
+  { label: "Fira Code", labelKey: null, value: '"Fira Code", "Cascadia Mono", Consolas, monospace' },
+  { label: "", labelKey: "font.systemMono" as TranslationKey, value: "monospace" },
 ];
+
+export function getThemeLabel(option: TerminalThemeOption): string {
+  return t(option.labelKey);
+}
+
+export function getFontLabel(preset: (typeof FONT_PRESETS)[number]): string {
+  return preset.labelKey ? t(preset.labelKey) : preset.label;
+}
 
 export function findThemeOption(themeId: string): TerminalThemeOption {
   return TERMINAL_THEMES.find(item => item.id === themeId) ?? TERMINAL_THEMES[0];

@@ -93,7 +93,10 @@ export interface AlertLogEntry {
   timestamp: number;
 }
 
+export type LanguageId = "zh-CN" | "en";
+
 export interface TerminalSettings {
+  language: LanguageId | string;
   font_family: string;
   font_size: number;
   theme: TerminalThemeId | string;

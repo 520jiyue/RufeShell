@@ -1,4 +1,5 @@
 import { api } from "./api.ts";
+import { setLanguage } from "./i18n/index.ts";
 import { applyAppTheme } from "./themes.ts";
 import type {
   AlertLogEntry,
@@ -52,6 +53,7 @@ export function defaultAlertRules(): AlertRule[] {
 
 export function defaultSettings(): TerminalSettings {
   return {
+    language: "zh-CN",
     font_family: '"Cascadia Mono", Consolas, monospace',
     font_size: 14,
     theme: "obsidian-emerald",
@@ -130,6 +132,8 @@ export interface AppState {
   connectionGroupFilter: string;
   connectionSort: ConnectionSortMode;
   sidebarCollapsed: boolean;
+  isElevated: boolean;
+  localShellAdmin: boolean;
   busy: boolean;
   connecting: boolean;
   discoveredHost: DiscoveredHost | null;
@@ -158,6 +162,8 @@ export const state: AppState = {
   connectionGroupFilter: "all",
   connectionSort: "favorite",
   sidebarCollapsed: false,
+  isElevated: false,
+  localShellAdmin: false,
   busy: false,
   connecting: false,
   discoveredHost: null,
@@ -235,4 +241,5 @@ export async function loadWorkbenchState(): Promise<void> {
     // Keep defaults
   }
   applyAppTheme(state.workbench.settings.theme);
+  setLanguage(state.workbench.settings.language, true);
 }

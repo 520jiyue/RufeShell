@@ -1,4 +1,5 @@
 import { api, dialogs, friendlyError, onDragDropEvent } from "../api.ts";
+import { onLanguageChange, t } from "../i18n/index.ts";
 import { icon } from "../icons.ts";
 import { getActiveSession, state } from "../state.ts";
 import type { Session } from "../types.ts";
@@ -44,11 +45,11 @@ export async function loadDirectory(id: string, path: string): Promise<void> {
 
   const request = ++session.directoryRequest;
   session.loadingFiles = true;
-  if (state.activeId === id) setGlobalStatus("正在读取远程目录…");
+  if (state.activeId === id) setGlobalStatus(t("files.loading"));
 
   const list = $<HTMLDivElement>(".file-list", session.fileElement);
   if (!session.filesLoaded) {
-    list.innerHTML = '<div class="empty-files">正在读取远程目录…</div>';
+    list.innerHTML = `<div class="empty-files">${escapeHtml(t("files.loading"))}</div>`;
   }
 
   try {
@@ -70,19 +71,19 @@ export async function loadDirectory(id: string, path: string): Promise<void> {
                 <span class="file-icon-badge ${entry.is_dir ? "is-dir" : ""}">${icon(entry.is_dir ? "folder" : "file")}</span>
                 <span class="file-label">${escapeHtml(entry.name)}</span>
               </button>
-              <span class="file-size">${entry.is_dir ? "目录" : formatBytes(entry.size)}</span>
+              <span class="file-size">${entry.is_dir ? escapeHtml(t("common.dir")) : formatBytes(entry.size)}</span>
             </div>
           `,
         )
-        .join("") || '<div class="empty-files">此目录为空 · 点击上传或右键操作</div>';
+        .join("") || `<div class="empty-files">${escapeHtml(t("files.empty"))}</div>`;
   } catch (error) {
     if (request !== session.directoryRequest) return;
     const message = friendlyError(error);
     list.innerHTML = `
       <div class="empty-files file-error">
-        <strong>文件读取失败</strong>
+        <strong>${escapeHtml(t("files.readError"))}</strong>
         <span>${escapeHtml(message)}</span>
-        <button class="subtle retry-files" type="button">重试</button>
+        <button class="subtle retry-files" type="button">${escapeHtml(t("common.retry"))}</button>
       </div>
     `;
     list.querySelector(".retry-files")?.addEventListener("click", () => {
@@ -91,7 +92,7 @@ export async function loadDirectory(id: string, path: string): Promise<void> {
     notify(message, true);
   } finally {
     if (request === session.directoryRequest) session.loadingFiles = false;
-    if (state.activeId === id) setGlobalStatus("就绪");
+    if (state.activeId === id) setGlobalStatus(t("common.ready"));
   }
 }
 
@@ -124,14 +125,15 @@ async function downloadDirectoryFromSession(session: Session, remoteDir: string)
 }
 
 async function promptCreateEntry(session: Session, isDir: boolean): Promise<void> {
-  const label = isDir ? "新建目录名称" : "新建文件名称";
-  const name = window.prompt(`在 ${session.path} 中${label}：`);
+  const name = window.prompt(
+    t(isDir ? "files.promptNewDir" : "files.promptNewFile", { path: session.path }),
+  );
   if (!name || !name.trim()) return;
   const targetPath = joinRemote(session.path, name.trim());
   try {
     if (isDir) await api.createRemoteDirectory(session.id, targetPath);
     else await api.createRemoteFile(session.id, targetPath);
-    notify(isDir ? "目录已创建" : "空文件已创建");
+    notify(t(isDir ? "files.dirCreated" : "files.fileCreated"));
     await loadDirectory(session.id, session.path);
   } catch (error) {
     notify(friendlyError(error), true);
@@ -139,13 +141,13 @@ async function promptCreateEntry(session: Session, isDir: boolean): Promise<void
 }
 
 async function promptRenameEntry(session: Session, oldPath: string, oldName: string): Promise<void> {
-  const nextName = window.prompt("输入新名称：", oldName);
+  const nextName = window.prompt(t("files.promptRename"), oldName);
   if (!nextName || !nextName.trim() || nextName.trim() === oldName) return;
   const parent = oldPath.replace(/\/[^/]+\/?$/, "") || "/";
   const newPath = joinRemote(parent, nextName.trim());
   try {
     await api.renameRemoteEntry(session.id, oldPath, newPath);
-    notify("重命名成功");
+    notify(t("files.renamed"));
     await loadDirectory(session.id, session.path);
   } catch (error) {
     notify(friendlyError(error), true);
@@ -158,9 +160,7 @@ function openDeleteConfirmation(session: Session, path: string, isDir: boolean):
   dialog.dataset.path = path;
   dialog.dataset.dir = String(isDir);
   $("#delete-target-path").textContent = path;
-  $("#delete-target-desc").textContent = isDir
-    ? "这是一个目录，确认后将递归删除其内部全部子目录和文件，无法撤销。"
-    : "确认后将永久删除该远端文件，无法撤销。";
+  $("#delete-target-desc").textContent = t(isDir ? "delete.dirDesc" : "delete.fileDesc");
   dialog.showModal();
 }
 
@@ -207,7 +207,7 @@ export function toggleFilesPanel(): void {
   $("#files-resizer").classList.toggle("hidden", hidden);
   const toggleBtn = $<HTMLButtonElement>("#toggle-files");
   toggleBtn.classList.toggle("active", !hidden);
-  toggleBtn.title = hidden ? "显示文件面板 (Ctrl+E)" : "隐藏文件面板 (Ctrl+E)";
+  toggleBtn.title = t(hidden ? "session.showFiles" : "session.hideFiles");
   const session = getActiveSession();
   if (session) requestAnimationFrame(() => session.fit.fit());
 }
@@ -215,6 +215,15 @@ export function toggleFilesPanel(): void {
 export async function initFilesPanel(): Promise<void> {
   const panel = $("#files-panel");
   const resizer = $("#files-resizer");
+
+  onLanguageChange(() => {
+    const toggleBtn = $<HTMLButtonElement>("#toggle-files");
+    toggleBtn.title = t(panel.classList.contains("hidden") ? "session.showFiles" : "session.hideFiles");
+    const active = getActiveSession();
+    if (active && active.kind === "ssh" && active.status === "connected" && active.filesLoaded) {
+      void loadDirectory(active.id, active.path);
+    }
+  });
 
   $("#toggle-files").addEventListener("click", toggleFilesPanel);
 
@@ -261,7 +270,7 @@ export async function initFilesPanel(): Promise<void> {
     try {
       await api.deleteRemoteEntry(session.id, path, recursive);
       dialog.close();
-      notify(`已删除 ${path}`);
+      notify(t("files.deleted", { path }));
       await loadDirectory(session.id, session.path);
     } catch (error) {
       notify(friendlyError(error), true);
@@ -289,13 +298,13 @@ export async function initFilesPanel(): Promise<void> {
     const path = dialog.dataset.path;
     const raw = $<HTMLInputElement>("#chmod-octal").value.trim();
     if (!session || !path || !/^[0-7]{3,4}$/.test(raw)) {
-      notify("请输入有效的八进制权限（例如 755 或 644）", true);
+      notify(t("files.invalidOctal"), true);
       return;
     }
     try {
       await api.setRemotePermissions(session.id, path, parseInt(raw, 8));
       dialog.close();
-      notify(`权限已更新为 ${raw}`);
+      notify(t("files.chmodUpdated", { mode: raw }));
     } catch (error) {
       notify(friendlyError(error), true);
     }
@@ -311,29 +320,29 @@ export async function initFilesPanel(): Promise<void> {
     menu.innerHTML = row
       ? row.dataset.dir === "true"
         ? `
-          <button type="button" data-action="open">${icon("folder")}打开目录</button>
-          <button type="button" data-action="download-dir">${icon("download")}下载整个目录</button>
-          <button type="button" data-action="rename">${icon("edit")}重命名</button>
-          <button type="button" data-action="chmod">${icon("sliders")}权限设置</button>
-          <button type="button" data-action="copy-path">${icon("copy")}复制路径</button>
-          <button type="button" data-action="delete" class="menu-danger">${icon("trash")}删除目录</button>
+          <button type="button" data-action="open">${icon("folder")}${escapeHtml(t("files.menuOpen"))}</button>
+          <button type="button" data-action="download-dir">${icon("download")}${escapeHtml(t("files.menuDownloadDir"))}</button>
+          <button type="button" data-action="rename">${icon("edit")}${escapeHtml(t("files.menuRename"))}</button>
+          <button type="button" data-action="chmod">${icon("sliders")}${escapeHtml(t("files.menuChmod"))}</button>
+          <button type="button" data-action="copy-path">${icon("copy")}${escapeHtml(t("files.menuCopyPath"))}</button>
+          <button type="button" data-action="delete" class="menu-danger">${icon("trash")}${escapeHtml(t("files.menuDeleteDir"))}</button>
         `
         : `
-          <button type="button" data-action="view">${icon("eye")}快速查看</button>
-          <button type="button" data-action="edit">${icon("edit")}查看并修改</button>
-          <button type="button" data-action="download">${icon("download")}下载文件</button>
-          <button type="button" data-action="rename">${icon("edit")}重命名</button>
-          <button type="button" data-action="chmod">${icon("sliders")}权限设置</button>
-          <button type="button" data-action="copy-path">${icon("copy")}复制路径</button>
-          <button type="button" data-action="delete" class="menu-danger">${icon("trash")}删除文件</button>
+          <button type="button" data-action="view">${icon("eye")}${escapeHtml(t("files.menuView"))}</button>
+          <button type="button" data-action="edit">${icon("edit")}${escapeHtml(t("files.menuEdit"))}</button>
+          <button type="button" data-action="download">${icon("download")}${escapeHtml(t("files.menuDownload"))}</button>
+          <button type="button" data-action="rename">${icon("edit")}${escapeHtml(t("files.menuRename"))}</button>
+          <button type="button" data-action="chmod">${icon("sliders")}${escapeHtml(t("files.menuChmod"))}</button>
+          <button type="button" data-action="copy-path">${icon("copy")}${escapeHtml(t("files.menuCopyPath"))}</button>
+          <button type="button" data-action="delete" class="menu-danger">${icon("trash")}${escapeHtml(t("files.menuDeleteFile"))}</button>
         `
       : `
-        <button type="button" data-action="new-file">${icon("plusFile")}新建文件</button>
-        <button type="button" data-action="new-dir">${icon("plusFolder")}新建目录</button>
-        <button type="button" data-action="upload">${icon("upload")}上传文件</button>
-        <button type="button" data-action="upload-dir">${icon("folder")}上传文件夹</button>
-        <button type="button" data-action="dual-pane">${icon("columns")}双栏对照同步</button>
-        <button type="button" data-action="refresh">${icon("refresh")}刷新目录</button>
+        <button type="button" data-action="new-file">${icon("plusFile")}${escapeHtml(t("files.menuNewFile"))}</button>
+        <button type="button" data-action="new-dir">${icon("plusFolder")}${escapeHtml(t("files.menuNewDir"))}</button>
+        <button type="button" data-action="upload">${icon("upload")}${escapeHtml(t("files.menuUpload"))}</button>
+        <button type="button" data-action="upload-dir">${icon("folder")}${escapeHtml(t("files.menuUploadDir"))}</button>
+        <button type="button" data-action="dual-pane">${icon("columns")}${escapeHtml(t("files.menuDualPane"))}</button>
+        <button type="button" data-action="refresh">${icon("refresh")}${escapeHtml(t("files.menuRefresh"))}</button>
       `;
 
     menu.classList.remove("hidden");
@@ -367,7 +376,7 @@ export async function initFilesPanel(): Promise<void> {
         }
         if (action === "copy-path" && row) {
           void navigator.clipboard?.writeText(row.dataset.path!);
-          notify(`已复制路径：${row.dataset.path!}`);
+          notify(t("files.copiedPath", { path: row.dataset.path! }));
         }
         if (action === "delete" && row) {
           openDeleteConfirmation(session, row.dataset.path!, row.dataset.dir === "true");
@@ -441,7 +450,10 @@ export async function initFilesPanel(): Promise<void> {
     document.querySelectorAll(".file-row.drop-target").forEach(item => item.classList.remove("drop-target"));
     row?.classList.toggle("drop-target", row.dataset.dir === "true");
     panel.classList.add("drag-active");
-    $("#file-drop-target").textContent = `${draggedFilePaths.length} 个文件 → ${remoteDirectory}`;
+    $("#file-drop-target").textContent = t("files.dropProgress", {
+      count: draggedFilePaths.length,
+      dir: remoteDirectory,
+    });
     $("#file-drop-hint").classList.remove("hidden");
   });
 }

@@ -390,6 +390,29 @@ async fn forward_events(
 }
 
 #[tauri::command]
+fn is_elevated() -> bool {
+    local_pty::is_process_elevated()
+}
+
+#[tauri::command]
+async fn relaunch_as_admin(app: AppHandle) -> Result<(), AppError> {
+    if local_pty::is_process_elevated() {
+        return Ok(());
+    }
+    local_pty::relaunch_as_admin()?;
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        app.exit(0);
+    });
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_elevated_local_terminal(kind: LocalShellKind) -> Result<(), AppError> {
+    local_pty::spawn_elevated_shell(kind)
+}
+
+#[tauri::command]
 async fn open_local_terminal(
     kind: LocalShellKind,
     app: AppHandle,
@@ -869,6 +892,9 @@ pub fn run() {
             discover_host_key,
             connect,
             connect_saved,
+            is_elevated,
+            relaunch_as_admin,
+            open_elevated_local_terminal,
             open_local_terminal,
             session_status,
             terminal_input,
@@ -968,6 +994,9 @@ async fn run_e2e() {
             discover_host_key,
             connect,
             connect_saved,
+            is_elevated,
+            relaunch_as_admin,
+            open_elevated_local_terminal,
             open_local_terminal,
             session_status,
             terminal_input,

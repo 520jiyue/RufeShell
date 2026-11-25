@@ -5,6 +5,8 @@ import "./styles/session.css";
 import "./styles/dialogs.css";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { api, friendlyError } from "./api.ts";
+import { onLanguageChange, t } from "./i18n/index.ts";
 import { icon } from "./icons.ts";
 import { getActiveSession, loadWorkbenchState, state } from "./state.ts";
 import { $, notify } from "./utils.ts";
@@ -27,6 +29,7 @@ import {
   initConnections,
   loadConnections,
   renderConnections,
+  syncLocalAdminToggle,
   toggleSidebar,
 } from "./ui/connections.ts";
 import { initHistoryUI, openHistoryDialog, setHistorySendHandler } from "./ui/history.ts";
@@ -53,7 +56,7 @@ function initWindowControls(): void {
     try {
       const maximized = await win.isMaximized();
       maxBtn.innerHTML = icon(maximized ? "winRestore" : "winMax");
-      maxBtn.title = maximized ? "还原" : "最大化";
+      maxBtn.title = t(maximized ? "titlebar.restore" : "titlebar.maximize");
     } catch {
       // Ignore in non-Tauri preview
     }
@@ -80,9 +83,55 @@ function initWindowControls(): void {
   }
 }
 
+function syncAdminLaunchButton(): void {
+  const btn = $<HTMLButtonElement>("#admin-launch-btn");
+  const label = $<HTMLSpanElement>("#admin-launch-label");
+  btn.classList.toggle("is-elevated", state.isElevated);
+  label.textContent = t(state.isElevated ? "titlebar.adminActive" : "titlebar.adminLaunch");
+  btn.title = t(state.isElevated ? "titlebar.adminActiveTitle" : "titlebar.adminLaunchTitle");
+}
+
+function triggerAdminRelaunch(): void {
+  void api.relaunchAsAdmin().catch(error => notify(friendlyError(error), true));
+}
+
+function initAdminLaunchControls(): void {
+  syncAdminLaunchButton();
+  onLanguageChange(syncAdminLaunchButton);
+
+  void api
+    .isElevated()
+    .then(elevated => {
+      state.isElevated = elevated;
+      syncAdminLaunchButton();
+      syncLocalAdminToggle();
+    })
+    .catch(() => undefined);
+
+  $("#admin-launch-btn").addEventListener("click", () => {
+    if (state.isElevated) {
+      notify(t("titlebar.adminAlreadyNotify"));
+      return;
+    }
+    const activeCount = state.sessions.size;
+    if (activeCount === 0) {
+      triggerAdminRelaunch();
+      return;
+    }
+    $("#relaunch-admin-desc").textContent = t("titlebar.adminRelaunchDesc", { count: activeCount });
+    $<HTMLDialogElement>("#relaunch-admin-dialog").showModal();
+  });
+
+  $("#confirm-relaunch-admin-btn").addEventListener("click", () => {
+    $<HTMLDialogElement>("#relaunch-admin-dialog").close();
+    triggerAdminRelaunch();
+  });
+}
+
 mountShell();
 initCustomSelects();
 initWindowControls();
+initAdminLaunchControls();
 await loadWorkbenchState();
 
 initDialogs({

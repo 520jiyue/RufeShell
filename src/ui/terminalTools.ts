@@ -1,4 +1,5 @@
 import { api, dialogs, friendlyError } from "../api.ts";
+import { t } from "../i18n/index.ts";
 import { getActiveSession, state } from "../state.ts";
 import { applyAppTheme, resolveTerminalTheme } from "../themes.ts";
 import type { Session } from "../types.ts";
@@ -23,7 +24,7 @@ export async function sendCommandToSession(
   execute = true,
 ): Promise<void> {
   if (session.status !== "connected") {
-    notify("会话未连接，无法发送指令", true);
+    notify(t("term.notConnected"), true);
     return;
   }
 
@@ -90,7 +91,7 @@ export function collectTerminalText(session: Session): string {
 export async function saveTerminalLog(session: Session): Promise<void> {
   const content = collectTerminalText(session);
   if (!content.trim()) {
-    notify("当前终端暂无可保存的输出内容");
+    notify(t("term.noOutputToSave"));
     return;
   }
   const safeName = session.profile.name.replace(/[\\/:*?"<>|]/g, "_");
@@ -100,7 +101,7 @@ export async function saveTerminalLog(session: Session): Promise<void> {
 
   try {
     const bytes = await api.saveTextLog(localPath, `${content}\n`);
-    notify(`日志已保存 · ${formatBytes(bytes)}`);
+    notify(t("term.logSaved", { size: formatBytes(bytes) }));
   } catch (error) {
     notify(friendlyError(error), true);
   }

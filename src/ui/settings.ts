@@ -1,28 +1,49 @@
+import { LANGUAGE_OPTIONS, onLanguageChange, setLanguage, t } from "../i18n/index.ts";
 import { getActiveSession, persistWorkbenchState, state } from "../state.ts";
-import { applyAppTheme, FONT_PRESETS, TERMINAL_THEMES } from "../themes.ts";
+import { applyAppTheme, FONT_PRESETS, getFontLabel, getThemeLabel, TERMINAL_THEMES } from "../themes.ts";
 import { $, escapeHtml, notify } from "../utils.ts";
 import { fetchAndRenderMetrics, restartAllMetricsTimers } from "./metrics.ts";
 import { applySettingsToAllTerminals } from "./terminalTools.ts";
 
 let themeBeforeOpen = "";
+let languageBeforeOpen = "";
+
+function populateSettingsSelects(): void {
+  const s = state.workbench.settings;
+
+  const langSelect = $<HTMLSelectElement>("#setting-language");
+  const currentLang = langSelect.value || s.language || "zh-CN";
+  langSelect.innerHTML = LANGUAGE_OPTIONS.map(
+    item => `<option value="${item.id}">${escapeHtml(item.label)}</option>`,
+  ).join("");
+  langSelect.value = currentLang;
+
+  const fontSelect = $<HTMLSelectElement>("#setting-font-family");
+  const currentFont = fontSelect.value || s.font_family;
+  fontSelect.innerHTML = FONT_PRESETS.map(
+    item => `<option value='${escapeHtml(item.value)}'>${escapeHtml(getFontLabel(item))}</option>`,
+  ).join("");
+  fontSelect.value = FONT_PRESETS.some(item => item.value === currentFont)
+    ? currentFont
+    : FONT_PRESETS[0].value;
+
+  const themeSelect = $<HTMLSelectElement>("#setting-theme");
+  const currentTheme = themeSelect.value || s.theme;
+  themeSelect.innerHTML = TERMINAL_THEMES.map(
+    item => `<option value="${item.id}">${escapeHtml(getThemeLabel(item))}</option>`,
+  ).join("");
+  themeSelect.value = currentTheme;
+}
 
 export function openSettingsDialog(): void {
   const s = state.workbench.settings;
   themeBeforeOpen = s.theme;
+  languageBeforeOpen = s.language;
 
-  const fontSelect = $<HTMLSelectElement>("#setting-font-family");
-  fontSelect.innerHTML = FONT_PRESETS.map(
-    item => `<option value='${escapeHtml(item.value)}'>${escapeHtml(item.label)}</option>`,
-  ).join("");
-  fontSelect.value = FONT_PRESETS.some(item => item.value === s.font_family)
-    ? s.font_family
-    : FONT_PRESETS[0].value;
-
-  const themeSelect = $<HTMLSelectElement>("#setting-theme");
-  themeSelect.innerHTML = TERMINAL_THEMES.map(
-    item => `<option value="${item.id}">${escapeHtml(item.label)}</option>`,
-  ).join("");
-  themeSelect.value = s.theme;
+  $<HTMLSelectElement>("#setting-language").value = "";
+  $<HTMLSelectElement>("#setting-font-family").value = "";
+  $<HTMLSelectElement>("#setting-theme").value = "";
+  populateSettingsSelects();
 
   $<HTMLInputElement>("#setting-font-size").value = String(s.font_size);
   $<HTMLInputElement>("#setting-copy-on-select").checked = s.copy_on_select;
@@ -60,7 +81,7 @@ export function adjustTerminalFontSize(delta: number): void {
   state.workbench.settings.font_size = next;
   applySettingsToAllTerminals();
   void persistWorkbenchState();
-  notify(`终端字号：${next}px`);
+  notify(t("term.fontSizeToast", { size: next }));
 }
 
 export function initSettingsUI(): void {
@@ -69,22 +90,38 @@ export function initSettingsUI(): void {
   const dialog = $<HTMLDialogElement>("#settings-dialog");
   const metricsDialog = $<HTMLDialogElement>("#metrics-settings-dialog");
   const themeSelect = $<HTMLSelectElement>("#setting-theme");
+  const languageSelect = $<HTMLSelectElement>("#setting-language");
 
   themeSelect.addEventListener("change", () => {
     applyAppTheme(themeSelect.value);
+  });
+
+  languageSelect.addEventListener("change", () => {
+    setLanguage(languageSelect.value, true);
+  });
+
+  onLanguageChange(() => {
+    if (dialog.open) {
+      populateSettingsSelects();
+    }
   });
 
   dialog.addEventListener("close", () => {
     if (themeBeforeOpen && themeBeforeOpen !== state.workbench.settings.theme) {
       applyAppTheme(state.workbench.settings.theme);
     }
+    if (languageBeforeOpen && languageBeforeOpen !== state.workbench.settings.language) {
+      setLanguage(state.workbench.settings.language, true);
+    }
   });
 
   $("#settings-form").addEventListener("submit", event => {
     event.preventDefault();
+    const nextLang = setLanguage(languageSelect.value, false);
 
     state.workbench.settings = {
       ...state.workbench.settings,
+      language: nextLang,
       font_family: $<HTMLSelectElement>("#setting-font-family").value,
       font_size: Math.max(11, Math.min(24, Number($<HTMLInputElement>("#setting-font-size").value) || 14)),
       theme: themeSelect.value,
@@ -98,10 +135,12 @@ export function initSettingsUI(): void {
     };
 
     themeBeforeOpen = state.workbench.settings.theme;
+    languageBeforeOpen = nextLang;
+    setLanguage(nextLang, true);
     applySettingsToAllTerminals();
     void persistWorkbenchState();
     dialog.close();
-    notify("工作台与终端设置已保存");
+    notify(t("settings.saved"));
   });
 
   $("#metrics-settings-form").addEventListener("submit", event => {
@@ -129,7 +168,7 @@ export function initSettingsUI(): void {
     restartAllMetricsTimers();
     void persistWorkbenchState();
     metricsDialog.close();
-    notify("主机遥测显示设置已保存");
+    notify(t("metricsSet.saved"));
   });
 
   $("#metrics-expand-all-btn").addEventListener("click", () => {
@@ -139,6 +178,6 @@ export function initSettingsUI(): void {
     if (active && active.kind === "ssh" && active.status === "connected") {
       void fetchAndRenderMetrics(active);
     }
-    notify("已展开全部遥测分组");
+    notify(t("metricsSet.expandedAll"));
   });
 }

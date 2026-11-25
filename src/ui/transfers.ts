@@ -1,4 +1,5 @@
 import { api, friendlyError, onTransferEvent } from "../api.ts";
+import { onLanguageChange, t } from "../i18n/index.ts";
 import { icon } from "../icons.ts";
 import { state } from "../state.ts";
 import type {
@@ -20,26 +21,26 @@ export function setTransferCompleteCallback(handler: (sessionId: string) => void
 
 function formatEta(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds)) return "—";
-  if (seconds < 60) return `${seconds} 秒`;
+  if (seconds < 60) return t("transfers.etaSec", { sec: seconds });
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
-  return `${mins} 分 ${secs} 秒`;
+  return t("transfers.etaMinSec", { min: mins, sec: secs });
 }
 
 function statusLabel(task: TransferTask): string {
   switch (task.status) {
     case "queued":
-      return "排队中";
+      return t("transfers.queued");
     case "running":
-      return task.speed_bps > 0 ? `${formatBytes(task.speed_bps)}/s` : "传输中";
+      return task.speed_bps > 0 ? `${formatBytes(task.speed_bps)}/s` : t("transfers.running");
     case "paused":
-      return "已暂停";
+      return t("transfers.paused");
     case "completed":
-      return "已完成";
+      return t("transfers.completed");
     case "failed":
-      return "失败";
+      return t("transfers.failed");
     case "cancelled":
-      return "已取消";
+      return t("transfers.cancelled");
   }
 }
 
@@ -51,20 +52,20 @@ export function updateTransferStatusPill(): void {
   const failed = list.filter(t => t.status === "failed");
 
   if (active.length > 0) {
-    const speed = active.reduce((sum, t) => sum + t.speed_bps, 0);
-    pill.textContent = `传输 ${active.length} 个任务 · ${formatBytes(speed)}/s`;
+    const speed = active.reduce((sum, item) => sum + item.speed_bps, 0);
+    pill.textContent = t("transfers.pillActive", { count: active.length, speed: formatBytes(speed) });
     pill.classList.add("is-active");
   } else if (paused.length > 0) {
-    pill.textContent = `传输已暂停 (${paused.length})`;
+    pill.textContent = t("transfers.pillPaused", { count: paused.length });
     pill.classList.remove("is-active");
   } else if (failed.length > 0) {
-    pill.textContent = `传输队列 (${failed.length} 个失败)`;
+    pill.textContent = t("transfers.pillFailed", { count: failed.length });
     pill.classList.remove("is-active");
   } else if (list.length > 0) {
-    pill.textContent = `传输队列 (${list.length})`;
+    pill.textContent = t("transfers.pillCount", { count: list.length });
     pill.classList.remove("is-active");
   } else {
-    pill.textContent = "传输队列";
+    pill.textContent = t("transfers.pillIdle");
     pill.classList.remove("is-active");
   }
 }
@@ -73,8 +74,7 @@ export function renderTransferList(): void {
   const container = $("#transfer-list");
   const list = [...state.transfers.values()];
   if (!list.length) {
-    container.innerHTML =
-      '<div class="empty-drawer">暂无传输任务<br/><small>支持大文件断点续传、SHA-256 校验与整个文件夹递归传输</small></div>';
+    container.innerHTML = `<div class="empty-drawer">${t("transfers.empty")}</div>`;
     return;
   }
 
@@ -88,21 +88,21 @@ export function renderTransferList(): void {
             : 0;
       const dirBadge =
         task.direction === "upload"
-          ? '<span class="transfer-dir upload">↑ 上传</span>'
-          : '<span class="transfer-dir download">↓ 下载</span>';
+          ? `<span class="transfer-dir upload">${escapeHtml(t("transfers.dirUp"))}</span>`
+          : `<span class="transfer-dir download">${escapeHtml(t("transfers.dirDown"))}</span>`;
       const checksumHtml = task.checksum_detail
         ? `<span class="transfer-checksum ${task.checksum_verified === false ? "is-bad" : task.checksum_verified === true ? "is-ok" : ""}">${escapeHtml(task.checksum_detail)}</span>`
         : "";
       const actions: string[] = [];
       if (task.status === "running" || task.status === "queued") {
         actions.push(
-          `<button type="button" class="icon-button" data-tx-pause="${task.id}" title="暂停">${icon("pause")}</button>`,
-          `<button type="button" class="icon-button" data-tx-cancel="${task.id}" title="取消">${icon("x")}</button>`,
+          `<button type="button" class="icon-button" data-tx-pause="${task.id}" title="${escapeHtml(t("common.pause"))}">${icon("pause")}</button>`,
+          `<button type="button" class="icon-button" data-tx-cancel="${task.id}" title="${escapeHtml(t("common.cancel"))}">${icon("x")}</button>`,
         );
       } else if (task.status === "paused" || task.status === "failed") {
         actions.push(
-          `<button type="button" class="icon-button accent-subtle" data-tx-resume="${task.id}" title="${task.status === "paused" ? "继续传输" : "重试"}">${icon("play")}</button>`,
-          `<button type="button" class="icon-button" data-tx-cancel="${task.id}" title="取消">${icon("x")}</button>`,
+          `<button type="button" class="icon-button accent-subtle" data-tx-resume="${task.id}" title="${escapeHtml(t(task.status === "paused" ? "common.resume" : "transfers.retryTitle"))}">${icon("play")}</button>`,
+          `<button type="button" class="icon-button" data-tx-cancel="${task.id}" title="${escapeHtml(t("common.cancel"))}">${icon("x")}</button>`,
         );
       }
 
@@ -124,7 +124,7 @@ export function renderTransferList(): void {
           <div class="transfer-progress-track"><span style="width:${percent}%"></span></div>
           <div class="transfer-meta">
             <span>${formatBytes(task.transferred_bytes)} / ${formatBytes(task.total_bytes)} (${percent}%)</span>
-            <span>剩余：${formatEta(task.eta_seconds)}</span>
+            <span>${escapeHtml(t("transfers.eta", { eta: formatEta(task.eta_seconds) }))}</span>
             ${checksumHtml}
           </div>
           ${task.error ? `<div class="transfer-error">${escapeHtml(task.error)}</div>` : ""}
@@ -146,14 +146,14 @@ function askConflictPolicy(conflicts: TransferConflict[]): Promise<ConflictPolic
     .map(item => {
       const partialNote =
         item.part_bytes > 0
-          ? `<span class="conflict-part">已有断点分片 ${formatBytes(item.part_bytes)}</span>`
+          ? `<span class="conflict-part">${escapeHtml(t("conflict.partial", { size: formatBytes(item.part_bytes) }))}</span>`
           : "";
       return `
         <div class="conflict-row">
           <strong>${escapeHtml(item.file_name)}</strong>
           <div class="conflict-meta">
-            <span>源文件：${formatBytes(item.source_size)}</span>
-            <span>目标文件：${item.target_size > 0 ? formatBytes(item.target_size) : "仅断点分片"}</span>
+            <span>${escapeHtml(t("conflict.source", { size: formatBytes(item.source_size) }))}</span>
+            <span>${escapeHtml(t("conflict.target", { size: item.target_size > 0 ? formatBytes(item.target_size) : t("conflict.onlyPart") }))}</span>
             ${partialNote}
           </div>
         </div>
@@ -264,7 +264,7 @@ export async function startFileDownload(
     });
     state.transfers.set(task.id, task);
     updateTransferStatusPill();
-    notify(`已加入下载队列：${task.file_name}`);
+    notify(t("transfers.queuedDownload", { name: task.file_name }));
   } catch (error) {
     notify(friendlyError(error), true);
   }
@@ -290,8 +290,8 @@ export async function startDirectoryTransfer(
     updateTransferStatusPill();
     notify(
       tasks.length
-        ? `已将目录内 ${tasks.length} 个文件加入传输队列`
-        : "目录为空，已创建目标目录结构",
+        ? t("transfers.queuedDirFiles", { count: tasks.length })
+        : t("transfers.queuedDirEmpty"),
     );
   } catch (error) {
     notify(friendlyError(error), true);
@@ -299,6 +299,10 @@ export async function startDirectoryTransfer(
 }
 
 export async function initTransfersUI(): Promise<void> {
+  onLanguageChange(() => {
+    updateTransferStatusPill();
+    if ($<HTMLDialogElement>("#transfer-dialog").open) renderTransferList();
+  });
   $("#transfer-status-pill").addEventListener("click", openTransferDialog);
 
   $("#transfer-clear-btn").addEventListener("click", async () => {
