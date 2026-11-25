@@ -83,7 +83,7 @@ jobs:
         if: matrix.runner == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils rpm
+          sudo apt-get install --no-install-recommends -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
 
       - name: Install frontend dependencies
         run: npm ci
@@ -102,7 +102,7 @@ jobs:
             RufeShell is a modern SSH and local terminal workbench built with Rust and Tauri.
 
             - Windows: NSIS `.exe` and MSI `.msi` installers.
-            - Linux: AppImage, Debian `.deb`, and RPM `.rpm` packages.
+            - Linux: AppImage for x64 systems.
             - macOS: Apple Silicon and Intel `.dmg` installers and `.app.tar.gz` archives.
 
             Windows ConPTY and administrator tools require Windows; SSH, SFTP, monitoring, forwarding and other remote features remain available on other desktop platforms.
@@ -113,7 +113,7 @@ jobs:
           assetNamePattern: RufeShell_v[version]_${{ matrix.assetPlatform }}_[arch][setup][ext]
           updaterJsonPreferNsis: true
           includeUpdaterJson: false
-          args: --target ${{ matrix.target }} ${{ matrix.runner == 'ubuntu-22.04' && '--bundles appimage,deb,rpm' || '' }}
+          args: --target ${{ matrix.target }} ${{ matrix.runner == 'ubuntu-22.04' && '--bundles appimage' || '' }}
           retryAttempts: 2
 
       - name: Upload build artifacts
@@ -129,6 +129,9 @@ jobs:
     needs: publish
     runs-on: ubuntu-latest
     steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:

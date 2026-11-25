@@ -22,7 +22,6 @@ function releaseAssetName(bundlePath, platform) {
     .replace(/^RufeShell\.app\.tar\.gz$/, `RufeShell_${archFromBundlePath(bundlePath)}.app.tar.gz`)
     .replace(/^RufeShell[_-]/, `RufeShell_v${version}_${platform === 'linux' ? 'Linux' : platform}_`)
     .replace(`_${version}_`, '_')
-    .replace(new RegExp(`[_-]${version.replaceAll('.', '\\.')}-1\\.x86_64\\.rpm$`, 'i'), '_x86_64.rpm')
     .replace('_en-US.msi', '.msi');
 }
 
