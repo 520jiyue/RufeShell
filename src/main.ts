@@ -142,34 +142,62 @@ function syncAdminLaunchButton(): void {
   const btn = $<HTMLButtonElement>("#admin-launch-btn");
   const label = $<HTMLSpanElement>("#admin-launch-label");
   btn.classList.toggle("is-elevated", state.isElevated);
-  label.textContent = t(state.isElevated ? "titlebar.adminActive" : "titlebar.adminLaunch");
-  btn.title = t(state.isElevated ? "titlebar.adminActiveTitle" : "titlebar.adminLaunchTitle");
+  if (!state.isElevated) {
+    label.textContent = t("titlebar.adminLaunch");
+    btn.title = t("titlebar.adminLaunchTitle");
+  } else if (state.canDeelevate) {
+    label.textContent = t("titlebar.adminActive");
+    btn.title = t("titlebar.adminSwitchStandardTitle");
+  } else {
+    label.textContent = t("titlebar.adminSystem");
+    btn.title = t("titlebar.adminSystemTitle");
+  }
 }
 
-function triggerAdminRelaunch(): void {
-  void api.relaunchAsAdmin().catch(error => notify(friendlyError(error), true));
-}
+let pendingElevationAction: "admin" | "standard" = "admin";
 
 function initAdminLaunchControls(): void {
   syncAdminLaunchButton();
   onLanguageChange(syncAdminLaunchButton);
 
   $("#admin-launch-btn").addEventListener("click", () => {
-    if (state.isElevated) {
-      notify(t("titlebar.adminAlreadyNotify"));
+    const activeCount = state.sessions.size;
+    if (!state.isElevated) {
+      pendingElevationAction = "admin";
+      $("#relaunch-admin-eyebrow").textContent = "UAC ELEVATION";
+      $("#relaunch-admin-title").textContent = t("titlebar.adminRelaunchTitle");
+      $("#relaunch-admin-desc").textContent =
+        activeCount > 0
+          ? t("titlebar.adminRelaunchDesc", { count: activeCount })
+          : t("titlebar.adminRelaunchZeroDesc");
+      $("#confirm-relaunch-admin-btn").textContent = t("titlebar.adminRelaunchBtn");
+      $<HTMLDialogElement>("#relaunch-admin-dialog").showModal();
       return;
     }
-    const activeCount = state.sessions.size;
-    $("#relaunch-admin-desc").textContent =
-      activeCount > 0
-        ? t("titlebar.adminRelaunchDesc", { count: activeCount })
-        : t("titlebar.adminRelaunchZeroDesc");
-    $<HTMLDialogElement>("#relaunch-admin-dialog").showModal();
+
+    if (state.canDeelevate) {
+      pendingElevationAction = "standard";
+      $("#relaunch-admin-eyebrow").textContent = "STANDARD MODE";
+      $("#relaunch-admin-title").textContent = t("titlebar.standardRelaunchTitle");
+      $("#relaunch-admin-desc").textContent =
+        activeCount > 0
+          ? t("titlebar.standardRelaunchDesc", { count: activeCount })
+          : t("titlebar.standardRelaunchZeroDesc");
+      $("#confirm-relaunch-admin-btn").textContent = t("titlebar.standardRelaunchBtn");
+      $<HTMLDialogElement>("#relaunch-admin-dialog").showModal();
+      return;
+    }
+
+    notify(t("titlebar.adminSystemLockedNotify"));
   });
 
   $("#confirm-relaunch-admin-btn").addEventListener("click", () => {
     $<HTMLDialogElement>("#relaunch-admin-dialog").close();
-    triggerAdminRelaunch();
+    const task =
+      pendingElevationAction === "standard"
+        ? api.relaunchAsStandard()
+        : api.relaunchAsAdmin();
+    void task.catch(error => notify(friendlyError(error), true));
   });
 }
 
@@ -179,9 +207,11 @@ initWindowControls();
 await Promise.all([
   loadWorkbenchState(),
   api
-    .isElevated()
-    .then(elevated => {
-      state.isElevated = elevated;
+    .elevationStatus()
+    .then(status => {
+      state.isElevated = status.is_elevated;
+      state.uacSplitToken = status.uac_split_token;
+      state.canDeelevate = status.can_deelevate;
     })
     .catch(() => undefined),
 ]);

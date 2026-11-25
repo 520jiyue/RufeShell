@@ -16,7 +16,7 @@ type UpdaterPhase =
   | "error";
 
 let phase: UpdaterPhase = "idle";
-let currentVersion = "1.3.0";
+let currentVersion = "1.3.2";
 let pendingUpdate: Update | null = null;
 let totalBytes: number | null = null;
 let downloadedBytes = 0;

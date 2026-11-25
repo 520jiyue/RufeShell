@@ -168,6 +168,12 @@ export interface FileDiffEntry {
 
 export type LocalShellKind = "power_shell" | "cmd" | "wsl";
 
+export interface ElevationStatus {
+  is_elevated: boolean;
+  uac_split_token: boolean;
+  can_deelevate: boolean;
+}
+
 export type TransferDirection = "upload" | "download";
 export type TransferStatus =
   | "queued"

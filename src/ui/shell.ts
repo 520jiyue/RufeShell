@@ -312,7 +312,7 @@ export function mountShell(): void {
         <span id="global-status" data-i18n="common.ready">就绪</span>
         <div class="statusbar-right">
           <button id="transfer-status-pill" type="button" class="transfer-status-pill" data-i18n="transfers.pillIdle">传输队列</button>
-          <button id="update-status-pill" type="button" class="update-status-pill">v1.3.0</button>
+          <button id="update-status-pill" type="button" class="update-status-pill">v1.3.2</button>
           <span>RufeShell</span>
         </div>
       </footer>
@@ -518,6 +518,7 @@ export function mountShell(): void {
           <label class="host-field"><span data-i18n="settings.closeAction">点击关闭窗口时</span><select id="setting-close-action"></select></label>
           <label class="host-field"><span data-i18n="settings.localPrivilege">本地终端权限</span><select id="setting-local-privilege"></select></label>
         </div>
+        <p id="settings-priv-note" class="settings-priv-note hidden"></p>
         <div class="settings-toggles">
           <label class="check-pill"><input id="setting-auto-reconnect" type="checkbox" /><span data-i18n="settings.autoReconnect">网络波动断开时自动重连（保留终端输出）</span></label>
           <label class="check-pill"><input id="setting-copy-on-select" type="checkbox" /><span data-i18n="settings.copyOnSelect">选中终端文本自动复制到剪贴板</span></label>
@@ -724,8 +725,8 @@ export function mountShell(): void {
       <div class="modal-shell">
         <div class="modal-head">
           <div>
-            <span class="eyebrow">UAC ELEVATION</span>
-            <h2 data-i18n="titlebar.adminRelaunchTitle">以管理员身份重启 RufeShell</h2>
+            <span id="relaunch-admin-eyebrow" class="eyebrow">UAC ELEVATION</span>
+            <h2 id="relaunch-admin-title" data-i18n="titlebar.adminRelaunchTitle">以管理员身份重启 RufeShell</h2>
           </div>
           <button type="button" class="icon-button close-dialog" data-i18n-aria="common.close" aria-label="关闭">${icon("x")}</button>
         </div>
@@ -808,12 +809,12 @@ export function mountShell(): void {
           <div class="updater-version-row">
             <div class="updater-ver-chip">
               <span data-i18n="updater.currentLabel">当前版本</span>
-              <strong id="updater-current-ver">v1.3.0</strong>
+              <strong id="updater-current-ver">v1.3.2</strong>
             </div>
             <span class="updater-ver-arrow">→</span>
             <div class="updater-ver-chip is-latest">
               <span data-i18n="updater.latestLabel">最新版本</span>
-              <strong id="updater-latest-ver">v1.3.0</strong>
+              <strong id="updater-latest-ver">v1.3.2</strong>
             </div>
           </div>
           <div id="updater-status-box" class="updater-status-box is-info"></div>

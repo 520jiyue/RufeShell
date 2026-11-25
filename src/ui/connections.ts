@@ -279,8 +279,12 @@ export function syncLocalAdminToggle(): void {
   btn.classList.toggle("is-admin", isAdminEffective);
 
   if (state.isElevated) {
-    label.textContent = t("sidebar.privAppAdmin");
-    btn.title = t("sidebar.localAdminActiveTitle");
+    label.textContent = t(state.canDeelevate ? "sidebar.privAppAdmin" : "sidebar.privSystemAdmin");
+    btn.title = t(
+      state.canDeelevate
+        ? "sidebar.localAdminSwitchTitle"
+        : "sidebar.localSystemAdminTitle",
+    );
   } else {
     const key =
       mode === "admin"
@@ -308,7 +312,11 @@ export function initConnections(): void {
 
   $("#local-admin-toggle").addEventListener("click", () => {
     if (state.isElevated) {
-      notify(t("titlebar.adminAlreadyNotify"));
+      if (state.canDeelevate) {
+        $<HTMLButtonElement>("#admin-launch-btn").click();
+      } else {
+        notify(t("titlebar.adminSystemLockedNotify"));
+      }
       return;
     }
     const order: LocalShellPrivilege[] = ["ask", "standard", "admin"];

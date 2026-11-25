@@ -508,14 +508,19 @@ fn is_elevated() -> bool {
 }
 
 #[tauri::command]
-async fn relaunch_as_admin(app: AppHandle, state: State<'_, AppState>) -> Result<(), AppError> {
-    if local_pty::is_process_elevated() {
-        return Ok(());
-    }
+fn elevation_status() -> local_pty::ElevationStatus {
+    local_pty::elevation_status()
+}
+
+fn relaunch_with_guard(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    launcher: impl FnOnce() -> Result<(), AppError>,
+) -> Result<(), AppError> {
     if let Ok(mut guard) = state.instance_guard.lock() {
         *guard = None;
     }
-    if let Err(error) = local_pty::relaunch_as_admin() {
+    if let Err(error) = launcher() {
         if let Ok(mut guard) = state.instance_guard.lock() {
             *guard = single_instance::try_acquire();
         }
@@ -526,6 +531,22 @@ async fn relaunch_as_admin(app: AppHandle, state: State<'_, AppState>) -> Result
         app.exit(0);
     });
     Ok(())
+}
+
+#[tauri::command]
+async fn relaunch_as_admin(app: AppHandle, state: State<'_, AppState>) -> Result<(), AppError> {
+    if local_pty::is_process_elevated() {
+        return Ok(());
+    }
+    relaunch_with_guard(app, state, local_pty::relaunch_as_admin)
+}
+
+#[tauri::command]
+async fn relaunch_as_standard(app: AppHandle, state: State<'_, AppState>) -> Result<(), AppError> {
+    if !local_pty::is_process_elevated() {
+        return Ok(());
+    }
+    relaunch_with_guard(app, state, local_pty::relaunch_as_standard)
 }
 
 #[tauri::command]
@@ -1085,7 +1106,9 @@ pub fn run() {
             connect,
             connect_saved,
             is_elevated,
+            elevation_status,
             relaunch_as_admin,
+            relaunch_as_standard,
             hide_to_tray,
             exit_app,
             sync_tray_language,

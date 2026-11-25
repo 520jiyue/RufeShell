@@ -52,25 +52,32 @@ function populateSettingsSelects(): void {
     : "ask";
 
   const localPrivilegeSelect = $<HTMLSelectElement>("#setting-local-privilege");
-  if (state.isElevated) {
-    localPrivilegeSelect.innerHTML = `<option value="inherited">${escapeHtml(t("settings.privInherited"))}</option>`;
-    localPrivilegeSelect.value = "inherited";
-    localPrivilegeSelect.disabled = true;
-  } else {
-    localPrivilegeSelect.disabled = false;
-    const currentPrivilege = localPrivilegeSelect.value || s.local_shell_privilege || "ask";
-    localPrivilegeSelect.innerHTML = [
-      { value: "ask", label: t("settings.privAsk") },
-      { value: "standard", label: t("settings.privStandard") },
-      { value: "admin", label: t("settings.privAdmin") },
-    ]
-      .map(item => `<option value="${item.value}">${escapeHtml(item.label)}</option>`)
-      .join("");
-    localPrivilegeSelect.value = ["ask", "standard", "admin"].includes(currentPrivilege)
-      ? currentPrivilege
-      : "ask";
-  }
+  localPrivilegeSelect.disabled = false;
+  const currentPrivilege = localPrivilegeSelect.value || s.local_shell_privilege || "ask";
+  localPrivilegeSelect.innerHTML = [
+    { value: "ask", label: t("settings.privAsk") },
+    { value: "standard", label: t("settings.privStandard") },
+    { value: "admin", label: t("settings.privAdmin") },
+  ]
+    .map(item => `<option value="${item.value}">${escapeHtml(item.label)}</option>`)
+    .join("");
+  localPrivilegeSelect.value = ["ask", "standard", "admin"].includes(currentPrivilege)
+    ? currentPrivilege
+    : "ask";
   syncSelectUI(localPrivilegeSelect);
+
+  const privNote = $<HTMLElement>("#settings-priv-note");
+  if (state.isElevated) {
+    privNote.textContent = t(
+      state.canDeelevate
+        ? "settings.privElevatedSwitchHint"
+        : "settings.privSystemUacOffHint",
+    );
+    privNote.classList.remove("hidden");
+  } else {
+    privNote.textContent = "";
+    privNote.classList.add("hidden");
+  }
 }
 
 export function openSettingsDialog(): void {
@@ -161,9 +168,7 @@ export function initSettingsUI(): void {
     event.preventDefault();
     const nextLang = setLanguage(languageSelect.value, false);
 
-    const localPrivValue = state.isElevated
-      ? state.workbench.settings.local_shell_privilege || "ask"
-      : $<HTMLSelectElement>("#setting-local-privilege").value || "ask";
+    const localPrivValue = $<HTMLSelectElement>("#setting-local-privilege").value || "ask";
 
     state.workbench.settings = {
       ...state.workbench.settings,

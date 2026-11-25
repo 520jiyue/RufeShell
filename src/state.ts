@@ -136,6 +136,8 @@ export interface AppState {
   connectionSort: ConnectionSortMode;
   sidebarCollapsed: boolean;
   isElevated: boolean;
+  uacSplitToken: boolean;
+  canDeelevate: boolean;
   busy: boolean;
   connecting: boolean;
   discoveredHost: DiscoveredHost | null;
@@ -165,6 +167,8 @@ export const state: AppState = {
   connectionSort: "favorite",
   sidebarCollapsed: false,
   isElevated: false,
+  uacSplitToken: true,
+  canDeelevate: false,
   busy: false,
   connecting: false,
   discoveredHost: null,

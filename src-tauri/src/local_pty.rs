@@ -4,8 +4,16 @@ use std::{
 };
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use serde::Serialize;
 use tokio::sync::broadcast;
 use uuid::Uuid;
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ElevationStatus {
+    pub is_elevated: bool,
+    pub uac_split_token: bool,
+    pub can_deelevate: bool,
+}
 
 use crate::{
     domain::{AppError, LocalShellKind, SessionStatus},
@@ -115,8 +123,16 @@ pub fn is_process_elevated() -> bool {
     platform::is_process_elevated()
 }
 
+pub fn elevation_status() -> ElevationStatus {
+    platform::elevation_status()
+}
+
 pub fn relaunch_as_admin() -> Result<(), AppError> {
     platform::relaunch_as_admin()
+}
+
+pub fn relaunch_as_standard() -> Result<(), AppError> {
+    platform::relaunch_as_standard()
 }
 
 pub fn maybe_run_elevated_pty_bridge() -> Option<i32> {
@@ -147,7 +163,11 @@ mod platform {
             CloseHandle, GetLastError, ERROR_CANCELLED, ERROR_PIPE_CONNECTED, HANDLE,
             INVALID_HANDLE_VALUE,
         },
-        Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY},
+        Security::{
+            DuplicateTokenEx, GetTokenInformation, SecurityImpersonation, TokenElevation,
+            TokenElevationType, TokenElevationTypeDefault, TokenPrimary, TOKEN_DUPLICATE,
+            TOKEN_ELEVATION, TOKEN_QUERY,
+        },
         Storage::FileSystem::{
             CreateFileW, ReadFile, WriteFile, FILE_FLAG_FIRST_PIPE_INSTANCE, OPEN_EXISTING,
         },
@@ -161,14 +181,22 @@ mod platform {
                 PIPE_TYPE_BYTE, PIPE_WAIT,
             },
             Threading::{
-                CreateProcessW, DeleteProcThreadAttributeList, GetCurrentProcess,
-                InitializeProcThreadAttributeList, OpenProcessToken, TerminateProcess,
-                UpdateProcThreadAttribute, EXTENDED_STARTUPINFO_PRESENT, LPPROC_THREAD_ATTRIBUTE_LIST,
-                PROCESS_INFORMATION, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, STARTF_USESTDHANDLES,
-                STARTUPINFOEXW,
+                CreateProcessW, CreateProcessWithTokenW, DeleteProcThreadAttributeList,
+                GetCurrentProcess, InitializeProcThreadAttributeList, OpenProcess,
+                OpenProcessToken, TerminateProcess, UpdateProcThreadAttribute,
+                EXTENDED_STARTUPINFO_PRESENT, LPPROC_THREAD_ATTRIBUTE_LIST,
+                PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
+                PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, STARTF_USESTDHANDLES, STARTUPINFOEXW,
+                STARTUPINFOW,
             },
         },
     };
+
+    #[link(name = "user32", kind = "raw-dylib")]
+    extern "system" {
+        fn GetShellWindow() -> HANDLE;
+        fn GetWindowThreadProcessId(hwnd: HANDLE, lpdw_process_id: *mut u32) -> u32;
+    }
 
     #[link(name = "shell32")]
     extern "system" {
@@ -206,12 +234,8 @@ mod platform {
         value.as_ref().encode_wide().chain(Some(0)).collect()
     }
 
-    pub fn is_process_elevated() -> bool {
+    fn token_is_elevated(token: HANDLE) -> bool {
         unsafe {
-            let mut token: HANDLE = ptr::null_mut();
-            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
-                return false;
-            }
             let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
             let mut ret_len = 0u32;
             let ok = GetTokenInformation(
@@ -221,9 +245,152 @@ mod platform {
                 std::mem::size_of::<TOKEN_ELEVATION>() as u32,
                 &mut ret_len,
             );
-            CloseHandle(token);
             ok != 0 && elevation.TokenIsElevated != 0
         }
+    }
+
+    fn token_has_split_uac(token: HANDLE) -> bool {
+        unsafe {
+            let mut elevation_type = TokenElevationTypeDefault;
+            let mut ret_len = 0u32;
+            let ok = GetTokenInformation(
+                token,
+                TokenElevationType,
+                (&mut elevation_type as *mut i32).cast(),
+                std::mem::size_of::<i32>() as u32,
+                &mut ret_len,
+            );
+            ok != 0 && elevation_type != TokenElevationTypeDefault
+        }
+    }
+
+    pub fn is_process_elevated() -> bool {
+        unsafe {
+            let mut token: HANDLE = ptr::null_mut();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+                return false;
+            }
+            let elevated = token_is_elevated(token);
+            CloseHandle(token);
+            elevated
+        }
+    }
+
+    fn acquire_standard_shell_primary_token() -> Result<RawHandleGuard, AppError> {
+        const MAXIMUM_ALLOWED_ACCESS: u32 = 0x0200_0000;
+        unsafe {
+            let shell_hwnd = GetShellWindow();
+            if shell_hwnd.is_null() {
+                return Err(AppError::Validation("未找到桌面 Shell 窗口，无法降权切换".into()));
+            }
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(shell_hwnd, &mut pid);
+            if pid == 0 {
+                return Err(AppError::Io("无法获取桌面 Shell 进程 PID".into()));
+            }
+            let proc_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if proc_handle.is_null() {
+                return Err(AppError::Io("无法打开桌面 Shell 进程".into()));
+            }
+            let _proc_guard = RawHandleGuard(proc_handle);
+
+            let mut shell_token: HANDLE = ptr::null_mut();
+            if OpenProcessToken(proc_handle, TOKEN_DUPLICATE | TOKEN_QUERY, &mut shell_token) == 0 {
+                return Err(AppError::Io("无法读取桌面 Shell 用户令牌".into()));
+            }
+            let _shell_token_guard = RawHandleGuard(shell_token);
+
+            if token_is_elevated(shell_token) {
+                return Err(AppError::Validation(
+                    "当前桌面环境本身运行于管理员会话（可能已关闭 UAC 或使用内置管理员账户），无法降权为标准用户"
+                        .into(),
+                ));
+            }
+
+            let mut primary_token: HANDLE = ptr::null_mut();
+            if DuplicateTokenEx(
+                shell_token,
+                MAXIMUM_ALLOWED_ACCESS,
+                ptr::null(),
+                SecurityImpersonation,
+                TokenPrimary,
+                &mut primary_token,
+            ) == 0
+            {
+                return Err(AppError::Io(format!(
+                    "复制标准用户令牌失败：{}",
+                    io::Error::last_os_error()
+                )));
+            }
+            Ok(RawHandleGuard(primary_token))
+        }
+    }
+
+    pub fn elevation_status() -> ElevationStatus {
+        unsafe {
+            let mut token: HANDLE = ptr::null_mut();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+                return ElevationStatus {
+                    is_elevated: false,
+                    uac_split_token: true,
+                    can_deelevate: false,
+                };
+            }
+            let _token_guard = RawHandleGuard(token);
+            let is_elevated = token_is_elevated(token);
+            let uac_split_token = token_has_split_uac(token);
+            let can_deelevate =
+                is_elevated && uac_split_token && acquire_standard_shell_primary_token().is_ok();
+            ElevationStatus {
+                is_elevated,
+                uac_split_token,
+                can_deelevate,
+            }
+        }
+    }
+
+    pub fn relaunch_as_standard() -> Result<(), AppError> {
+        if !is_process_elevated() {
+            return Ok(());
+        }
+        let primary_token = acquire_standard_shell_primary_token()?;
+        let exe = std::env::current_exe()
+            .map_err(|err| AppError::Io(format!("无法获取当前程序路径：{err}")))?;
+        let exe_w = to_wide(exe.as_os_str());
+        let cwd_w = std::env::current_dir()
+            .ok()
+            .map(|dir| to_wide(dir.as_os_str()));
+
+        let startup = STARTUPINFOW {
+            cb: std::mem::size_of::<STARTUPINFOW>() as u32,
+            ..Default::default()
+        };
+        let mut proc_info = PROCESS_INFORMATION::default();
+
+        let ok = unsafe {
+            CreateProcessWithTokenW(
+                primary_token.0,
+                0,
+                exe_w.as_ptr(),
+                ptr::null_mut(),
+                0,
+                ptr::null(),
+                cwd_w.as_ref().map_or(ptr::null(), |dir| dir.as_ptr()),
+                &startup,
+                &mut proc_info,
+            )
+        };
+        if ok == 0 {
+            return Err(AppError::Io(format!(
+                "以标准权限重启失败：{}",
+                io::Error::last_os_error()
+            )));
+        }
+        unsafe {
+            CloseHandle(proc_info.hThread);
+            CloseHandle(proc_info.hProcess);
+        }
+        Ok(())
     }
 
     fn shell_execute_runas(
@@ -1025,8 +1192,20 @@ mod platform {
         false
     }
 
+    pub fn elevation_status() -> ElevationStatus {
+        ElevationStatus {
+            is_elevated: false,
+            uac_split_token: true,
+            can_deelevate: false,
+        }
+    }
+
     pub fn relaunch_as_admin() -> Result<(), AppError> {
         Err(AppError::Validation("仅 Windows 支持以管理员权限重启".into()))
+    }
+
+    pub fn relaunch_as_standard() -> Result<(), AppError> {
+        Err(AppError::Validation("仅 Windows 支持切换标准权限重启".into()))
     }
 
     pub fn maybe_run_elevated_pty_bridge() -> Option<i32> {
@@ -1112,7 +1291,11 @@ mod tests {
 
     #[test]
     fn shell_resolution_and_elevation_check_succeed() {
-        let _ = is_process_elevated();
+        let status = elevation_status();
+        assert_eq!(status.is_elevated, is_process_elevated());
+        if !status.is_elevated {
+            assert!(!status.can_deelevate);
+        }
         let (pwsh_exe, pwsh_args) = platform::resolve_shell_spec(LocalShellKind::PowerShell);
         assert!(pwsh_exe == "pwsh.exe" || pwsh_exe == "powershell.exe");
         assert_eq!(pwsh_args, "-NoLogo");

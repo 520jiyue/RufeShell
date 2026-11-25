@@ -8,6 +8,7 @@ import type {
   Connection,
   ConnectionDraft,
   DockerContainer,
+  ElevationStatus,
   FileDiffEntry,
   ForwardRuleDraft,
   ForwardRuleInfo,
@@ -65,7 +66,9 @@ export const api = {
   connectSaved: (profileId: string, timeoutSecs?: number | null) =>
     invoke<string>("connect_saved", { profileId, timeoutSecs: timeoutSecs ?? null }),
   isElevated: () => invoke<boolean>("is_elevated"),
+  elevationStatus: () => invoke<ElevationStatus>("elevation_status"),
   relaunchAsAdmin: () => invoke<void>("relaunch_as_admin"),
+  relaunchAsStandard: () => invoke<void>("relaunch_as_standard"),
   hideToTray: () => invoke<void>("hide_to_tray"),
   exitApp: () => invoke<void>("exit_app"),
   syncTrayLanguage: (language: string) => invoke<void>("sync_tray_language", { language }),
