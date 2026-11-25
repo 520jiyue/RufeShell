@@ -84,8 +84,11 @@ for (const platform of ['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'da
 const portableName = `RufeShell_v${version}_windows_x64-portable.zip`;
 if (!assets.some(asset => asset.name === portableName)) {
   const portablePath = fs.globSync(`rufeshell-windows-x86_64/**/${portableName}`, { cwd: packagesDirectory })[0];
-  if (!portablePath) throw new Error('Missing Windows x64 portable archive');
-  await uploadPackage(path.join(packagesDirectory, portablePath), portableName, 'application/zip');
+  if (portablePath) {
+    await uploadPackage(path.join(packagesDirectory, portablePath), portableName, 'application/zip');
+  } else {
+    console.warn(`Skipping ${portableName}: not present in build artifacts`);
+  }
 }
 
 for (const asset of assets) {

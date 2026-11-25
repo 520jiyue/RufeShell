@@ -127,7 +127,7 @@ jobs:
           retryAttempts: 2
 
       - name: Package Windows x64 portable archive
-        if: matrix.assetPlatform == 'windows' && matrix.assetArch == 'x64'
+        if: matrix.signaturePlatform == 'windows' && matrix.signatureArch == 'x86_64'
         shell: pwsh
         run: |
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
