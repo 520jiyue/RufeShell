@@ -157,11 +157,12 @@ jobs:
 
           for (const signaturePath of signatures) {
             const bundlePath = signaturePath.slice(0, -4);
-            const asset = assets.find(item => item.name === path.basename(bundlePath));
-            if (!asset) throw new Error(`Missing release package for ${path.basename(bundlePath)}`);
             const directory = signaturePath.split(path.sep).find(part => /^rufeshell-(windows|linux|darwin)-(x86_64|aarch64)$/.test(part));
             if (!directory) throw new Error(`Unknown artifact directory: ${signaturePath}`);
             const [, platform, arch] = directory.match(/^rufeshell-(windows|linux|darwin)-(x86_64|aarch64)$/);
+            const assetName = path.basename(bundlePath).replace(/^RufeShell_/, `RufeShell_v${version}_${platform}_`);
+            const asset = assets.find(item => item.name === assetName);
+            if (!asset) throw new Error(`Missing release package for ${path.basename(bundlePath)}`);
             const bundle = signaturePath.includes('.app.tar.gz') ? 'app' : signaturePath.includes('.AppImage') ? 'appimage' : signaturePath.endsWith('.exe.sig') ? 'nsis' : signaturePath.endsWith('.msi.sig') ? 'msi' : path.extname(bundlePath).slice(1);
             const entry = { signature: fs.readFileSync(signaturePath, 'utf8'), url: asset.browser_download_url };
             manifest.platforms[`${platform}-${arch}-${bundle}`] = entry;
