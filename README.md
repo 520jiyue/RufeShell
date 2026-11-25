@@ -27,6 +27,7 @@
 </p>
 
 <p>
+  <a href="#界面预览">界面预览</a> ·
   <a href="#安装与下载">下载安装</a> ·
   <a href="#核心特性">核心特性</a> ·
   <a href="#快捷键一览">快捷键</a> ·
@@ -56,11 +57,37 @@ npm run tauri dev
 
 ---
 
+## 界面预览
+
+### 1. SSH 交互终端 · 主机遥测 · SFTP 同屏工作台
+多标签同时管理内置管理员 PowerShell 与远程 SSH 会话；左侧实时展示主机分组与标签，中左独立遥测通道实时刷新 CPU 趋势、内存、网络速率与磁盘挂载点，右侧集成 SFTP 文件浏览与快捷命令行栏。
+
+<p align="center">
+  <img src="docs/screenshots/01-workbench-terminal.png" alt="RufeShell Terminal Telemetry and SFTP Workbench" width="100%" />
+</p>
+
+### 2. 更多核心视图
+
+| 启动命令中心与快速连接 | SFTP 双栏差异比对与批量同步 |
+| :---: | :---: |
+| <img src="docs/screenshots/02-welcome-center.png" alt="Welcome Command Center" width="100%" /> | <img src="docs/screenshots/03-dual-sftp-diff.png" alt="Dual-Pane SFTP Diff Sync" width="100%" /> |
+| 收藏服务器快速连接、分组筛选排序，左下角一键拉起 PowerShell / CMD / WSL（支持标准与管理员权限选择）。 | 本地目录与远端目录并排对比，直观标出「本地较新 / 仅本地 / 仅远端 / 一致」，支持单文件与批量同步。 |
+
+<p align="center">
+  <strong>主机运维面板（Docker 容器 / 进程管理 / Systemd 服务 / SSH 端口转发）</strong><br/>
+  <sub>实时查看容器健康状态、CPU/内存占用与端口映射，一键查看日志、重启或启停服务；可无缝切换资源历史趋势、进程管理与端口转发规则。</sub>
+</p>
+<p align="center">
+  <img src="docs/screenshots/04-host-ops-docker.png" alt="Host Ops Docker Management" width="100%" />
+</p>
+
+---
+
 ## 安装与下载
 
 前往 [GitHub Releases](https://github.com/520jiyue/RufeShell/releases) 下载对应平台的预编译安装包：
 
-- **Windows（`x64` / `arm64`）**：推荐下载 **NSIS `.exe` 安装包**（支持应用内一键自动更新），亦提供 `.msi` 安装包；具备完整的本地 ConPTY 与 UAC 提权体验。
+- **Windows（`x64` / `arm64`）**：推荐下载 **NSIS `.exe` 安装包**（约 4.6 MB，支持应用内一键自动更新），亦提供 `x64` 免安装便携版 `.zip`；具备完整的本地 ConPTY 与 UAC 提权体验。
 - **macOS（`Apple Silicon` / `Intel`）与 Linux（`x64 .deb`）**：支持远程 SSH、SFTP、主机遥测、端口转发与主机运维等功能 *（Windows ConPTY 本地终端与 UAC 提权能力仅适用于 Windows）*。
 
 ---

@@ -27,6 +27,7 @@
 </p>
 
 <p>
+  <a href="#screenshots">Screenshots</a> ·
   <a href="#installation">Download</a> ·
   <a href="#features">Features</a> ·
   <a href="#keyboard-shortcuts">Shortcuts</a> ·
@@ -56,11 +57,37 @@ Traditional terminal tools often require juggling separate apps for SSH terminal
 
 ---
 
+## Screenshots
+
+### 1. Unified Terminal, Live Telemetry & SFTP Workbench
+Manage elevated local PowerShell tabs alongside remote SSH sessions in one tab bar—featuring live CPU/Memory/Network/Disk telemetry on the left, colorful `xterm.js` terminal + quick command bar in the center, and SFTP file management on the right.
+
+<p align="center">
+  <img src="docs/screenshots/01-workbench-terminal.png" alt="RufeShell Terminal Telemetry and SFTP Workbench" width="100%" />
+</p>
+
+### 2. Command Center, Dual-Pane SFTP Sync & Host Ops
+
+| Welcome Command Center | Dual-Pane SFTP Diff & Sync |
+| :---: | :---: |
+| <img src="docs/screenshots/02-welcome-center.png" alt="Welcome Command Center" width="100%" /> | <img src="docs/screenshots/03-dual-sftp-diff.png" alt="Dual-Pane SFTP Diff Sync" width="100%" /> |
+| Favorite hosts, group/tag filtering, quick connect cards, and one-click local PowerShell / CMD / WSL launch with Standard/Admin privilege choice. | Side-by-side local vs. remote comparison highlighting newer, local-only, and remote-only files with batch sync actions. |
+
+<p align="center">
+  <strong>Host Ops Panel (Docker Containers · Processes · Systemd Services · SSH Port Forwarding)</strong><br/>
+  <sub>Inspect container health, CPU/memory usage, and port bindings, stream logs, and start/stop/restart containers or systemd services without leaving the workbench.</sub>
+</p>
+<p align="center">
+  <img src="docs/screenshots/04-host-ops-docker.png" alt="Host Ops Docker Management" width="100%" />
+</p>
+
+---
+
 ## Installation
 
 Pre-built packages are available on the [GitHub Releases](https://github.com/520jiyue/RufeShell/releases) page:
 
-- **Windows (`x64` / `arm64`)**: NSIS `.exe` (recommended, supports in-app auto-updates) and `.msi` installers — full support including native ConPTY & UAC elevation.
+- **Windows (`x64` / `arm64`)**: NSIS `.exe` (recommended, ~4.6 MB, supports in-app auto-updates) and `x64` portable `.zip` — full support including native ConPTY & UAC elevation.
 - **macOS (`Apple Silicon` / `Intel`) & Linux (`x64 .deb`)**: Remote SSH, SFTP, host telemetry, port forwarding, and ops panels are supported *(local ConPTY & Windows UAC controls are Windows-only)*.
 
 ---
