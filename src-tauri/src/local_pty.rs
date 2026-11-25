@@ -542,9 +542,10 @@ mod tests {
                         break;
                     }
                 }
-                Ok(SessionEvent::Status { status, .. })
-                    if matches!(status, SessionStatus::Closed) =>
-                {
+                Ok(SessionEvent::Status {
+                    status: SessionStatus::Closed,
+                    ..
+                }) => {
                     break;
                 }
                 Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {

@@ -6,8 +6,6 @@ mod local_pty;
 mod ops;
 pub mod sessions;
 mod store;
-#[cfg(debug_assertions)]
-pub mod test_support;
 mod transfers;
 
 use std::sync::Arc;
@@ -57,16 +55,6 @@ fn hide_frameless_window_border(app: &tauri::App) {
             }
         }
     }
-}
-
-#[cfg(debug_assertions)]
-#[tauri::command]
-fn e2e_drag_drop(paths: Vec<String>, x: f64, y: f64, app: AppHandle) -> Result<(), AppError> {
-    app.emit(
-        "tauri://drag-drop",
-        serde_json::json!({ "paths": paths, "position": { "x": x, "y": y } }),
-    )
-    .map_err(|error| AppError::Validation(error.to_string()))
 }
 
 #[doc(hidden)]
@@ -854,10 +842,6 @@ async fn system_metrics(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    if cfg!(debug_assertions) && std::env::var_os("FINALPOWERSHELL_E2E").is_some() {
-        tauri::async_runtime::block_on(run_e2e());
-        return;
-    }
     let data_dir = dirs_data();
     let store = Store::open(data_dir.clone()).expect("无法初始化本地连接数据库");
     let workbench = WorkbenchStore::open(data_dir.clone()).expect("无法初始化工作台配置数据库");
@@ -939,108 +923,6 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("无法启动 RufeShell");
-}
-
-#[cfg(debug_assertions)]
-async fn run_e2e() {
-    let server = test_support::start_test_server().await;
-    let data_dir = std::path::PathBuf::from("../.preview-data/e2e");
-    let store = Store::open(data_dir.clone()).expect("无法初始化测试数据库");
-    let workbench = WorkbenchStore::open(data_dir.clone()).expect("无法初始化测试工作台配置");
-    let profile = ConnectionProfile {
-        id: "local-e2e".into(),
-        name: "自动测试服务器".into(),
-        host: "127.0.0.1".into(),
-        port: server.port,
-        username: "integration".into(),
-        auth: AuthKind::Password,
-        private_key_path: None,
-        updated_at: 0,
-    };
-    store.upsert(profile).expect("无法保存测试连接");
-    credentials::save("local-e2e", "temporary-test-password").expect("无法保存临时测试密码");
-    let host_keys = HostKeyStore::open(data_dir).expect("无法初始化测试主机密钥");
-    host_keys
-        .save("127.0.0.1", server.port, &server.host_key)
-        .expect("无法保存测试主机密钥");
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .setup(|_app| {
-            #[cfg(target_os = "windows")]
-            hide_frameless_window_border(_app);
-            Ok(())
-        })
-        .manage(AppState {
-            store,
-            workbench,
-            host_keys,
-            sessions: Arc::new(SessionManager::new()),
-            local_pty: LocalPtyManager::new(),
-            transfers: TransferManager::new(),
-            forwards: ForwardManager::new(),
-        })
-        .invoke_handler(tauri::generate_handler![
-            list_connections,
-            save_connection,
-            update_connection,
-            duplicate_connection,
-            delete_connection,
-            export_connections,
-            import_connections,
-            load_workbench_state,
-            save_workbench_state,
-            save_text_log,
-            e2e_drag_drop,
-            discover_host_key,
-            connect,
-            connect_saved,
-            is_elevated,
-            relaunch_as_admin,
-            open_elevated_local_terminal,
-            open_local_terminal,
-            session_status,
-            terminal_input,
-            terminal_resize,
-            disconnect,
-            list_directory,
-            download_file,
-            upload_file,
-            read_text_file,
-            write_text_file,
-            create_remote_file,
-            create_remote_directory,
-            rename_remote_entry,
-            delete_remote_entry,
-            get_remote_permissions,
-            set_remote_permissions,
-            list_transfers,
-            inspect_transfer_conflicts,
-            enqueue_transfer,
-            enqueue_directory_transfer,
-            pause_transfer,
-            resume_transfer,
-            cancel_transfer,
-            clear_finished_transfers,
-            local_quick_paths,
-            list_local_directory,
-            compare_local_remote,
-            list_forwards,
-            add_forward,
-            start_forward,
-            stop_forward,
-            remove_forward,
-            list_processes_detailed,
-            kill_process,
-            list_systemd_services,
-            control_systemd_service,
-            read_systemd_logs,
-            list_docker_containers,
-            control_docker_container,
-            read_docker_logs,
-            system_metrics,
-        ])
-        .run(tauri::generate_context!())
-        .expect("无法启动自动测试窗口");
 }
 
 fn dirs_data() -> std::path::PathBuf {

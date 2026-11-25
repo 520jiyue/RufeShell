@@ -229,7 +229,7 @@ async fn terminal_round_trip_and_sftp_listing_work_together() {
     let host_key =
         russh::keys::PrivateKey::random(&mut rand::rng(), russh::keys::Algorithm::Ed25519).unwrap();
     let host_key_openssh = host_key.public_key().to_openssh().unwrap();
-    let expected_fingerprint = host_key_fingerprint(&host_key.public_key());
+    let expected_fingerprint = host_key_fingerprint(host_key.public_key());
     let config = Arc::new(russh::server::Config {
         keys: vec![host_key],
         inactivity_timeout: Some(Duration::from_secs(60)),

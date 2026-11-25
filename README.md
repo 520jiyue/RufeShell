@@ -1,79 +1,193 @@
-# FinalPowerShell
+<div align="center">
 
-使用 Rust、Tauri 2 和 xterm.js 构建的本地远程运维工作台。当前开发预览版支持连接配置、SSH 交互终端、SFTP 目录浏览和单文件上传下载，不依赖 FinalShell 或 Java 运行时。
+<p>
+  <strong>English</strong> · <a href="./README.zh-CN.md">简体中文</a>
+</p>
 
-## 已实现
+<img src="src/assets/rufeshell-icon.png" alt="RufeShell Logo" width="84" />
 
-- 本地 JSON 连接配置，写入前保留备份，Windows 下使用原子替换。
-- 密码仅存入 Windows 凭据库，连接配置不保存密码。
-- 密码和 OpenSSH 私钥认证；首次连接自动获取服务器公钥并显示 SHA256 指纹，可选择仅本次接受或保存到 `known_hosts`；已信任且凭据可用的服务器点击连接卡片即可登录。
-- 多标签 SSH 终端、终端尺寸同步、主动断开和连接保活。
-- Linux 服务器 CPU 趋势、内存、交换分区、网络速率、进程、挂载点、负载和运行时间面板，每 2 秒刷新，单次采样 0.6 秒并复用独立监控连接；临时失败保留已有数据并自动恢复。
-- 右侧 SFTP 文件面板支持隐藏和拖动调宽；右键目录打开，右键文件快速查看、编辑保存或下载，右键空白处上传和刷新。
-- 支持从 Windows 资源管理器拖入一个或多个文件上传到当前目录，也可拖到指定子目录；上传不会覆盖同名文件。
-- 快速编辑支持 1 MB 以内的 UTF-8 文本，拒绝直接编辑二进制文件；上传不覆盖已有文件。
+<h1>RufeShell</h1>
 
-## 环境
+<p>
+  <strong>A native Rust + Tauri 2 SSH, SFTP &amp; Windows ConPTY operations workbench.</strong>
+</p>
 
-- Windows 10/11、Node.js 22+、Rust 1.90+。
-- Visual Studio 2022 C++ Build Tools（MSVC x64、Windows 11 SDK）。
-- 项目新增工具与缓存统一放在 `D:\coding environment`：
-  - `tools\npm`：npm 启动文件。
-  - `npm-cache`：npm 下载缓存。
-  - `cargo-cache\finalpowershell`：Cargo 构建输出。
-  - `VSBuildTools`：MSVC 编译器。
-  - `portable-msvc`、`portable-sdk`：项目使用的 C++ 头文件、运行库和 Windows SDK 工具。
-  - `VSShared`、`vs-cache`：Visual Studio 共享组件和安装清单。
+<p>
+  Built for daily remote ops: tabbed SSH &amp; local shells, dual-pane SFTP sync, host telemetry, and container management — with zero Java runtime dependency.
+</p>
 
-本工作区使用内置 Node.js，所以可用下面的完整命令运行 npm。普通终端已将 Node.js 和 npm 加入 PATH 时，直接使用 `npm run dev` 和 `npm run tauri dev` 即可。
+<p>
+  <img src="https://img.shields.io/badge/Tauri-2.x-24C8D8?style=flat-square&logo=tauri&logoColor=white" alt="Tauri 2" />
+  <img src="https://img.shields.io/badge/Rust-1.90%2B-DEA584?style=flat-square&logo=rust&logoColor=111111" alt="Rust" />
+  <img src="https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/xterm.js-6.0-111827?style=flat-square" alt="xterm.js" />
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D4?style=flat-square&logo=windows&logoColor=white" alt="Windows 10/11" />
+  <img src="https://img.shields.io/badge/Version-1.2.0-10B981?style=flat-square" alt="Version 1.2.0" />
+</p>
 
-推荐通过项目脚本启动，它会设置 MSVC、Windows SDK 和 D 盘缓存：
+<p>
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#keyboard-shortcuts">Shortcuts</a> ·
+  <a href="#project-structure">Architecture</a> ·
+  <a href="#security--storage">Security</a>
+</p>
 
 ```powershell
-.\scripts\dev-env.ps1 dev
+npm run tauri dev
 ```
 
-不要直接双击 `cargo-cache` 中的开发版 `finalpowershell.exe`：开发模式需要同时运行本地界面服务，直接启动会出现 `localhost 拒绝连接`。需要独立打开的程序时，请使用 `.\scripts\dev-env.ps1 build` 生成发行版。
+</div>
 
-其他命令：`.\scripts\dev-env.ps1 check` 运行前端构建、Rust 测试和静态检查；`.\scripts\dev-env.ps1 build` 生成发行包。
+> [!NOTE]
+> RufeShell stores SSH login passwords exclusively inside **Windows Credential Manager** (`keyring`) rather than plain-text config files, and verifies remote server SHA-256 host keys via `known_hosts`.
+
+---
+
+## Features
+
+### SSH & Local ConPTY Sessions
+- **Native SSH Interactive Terminal**: Multi-tabbed `russh` client with password and OpenSSH private key authentication, automatic terminal dimension sync, and keepalive.
+- **Host Key Verification**: Displays the server's SHA-256 public key fingerprint on first connect (`Trust Once` or `Trust & Save`), and blocks connections if a saved key changes.
+- **Auto Reconnect**: Preserves terminal scrollback on network drops and automatically retries based on configurable timeout and max-attempt settings, alongside one-click manual reconnect.
+- **Unified Local Terminals**: Launch native Windows ConPTY tabs for **PowerShell** (`pwsh.exe` / `powershell.exe`), **CMD**, and **WSL** right alongside SSH tabs.
+- **Administrator Launch (UAC)**: Relaunch RufeShell as Administrator via Windows UAC (so built-in local terminal tabs inherit elevated tokens), or toggle the sidebar **Admin** shield to open individual elevated local terminal windows.
+
+### Daily Command Productivity
+- **Command History**: Records command, timestamp, server, and execution outcome; supports `↑` / `↓` recall, search, deduplication, clearing, and automatic filtering of password/secret patterns.
+- **Command Snippets**: Organize frequently used commands into groups with template variables (e.g. `{domain}`, `{service}`) and `Alt + 1` ~ `Alt + 9` quick triggers.
+- **Terminal Tools**: Output search (`Ctrl + F`), screen clear (`Ctrl + Shift + L`), font & size controls, copy-on-select, right-click paste, and terminal log export.
+- **Connection Management**: Edit, duplicate, group, tag, favorite, and sort connections, plus JSON import/export (passwords excluded).
+
+### SFTP & Dual-Pane Sync
+- **Full Context Menu**: Create file/folder, rename, two-step delete confirmation, copy path, and inspect/update Linux `chmod` permissions.
+- **Safe Remote Text Editor**: View and edit UTF-8 files up to 1 MB with binary file protection and optional automatic `.bak` backup before saving.
+- **Transfer Queue**: Live speed, progress, ETA, pause/resume/cancel/retry controls, large-file resume, conflict resolution prompts, and optional SHA-256 integrity verification.
+- **Directory Transfers & Drag-and-Drop**: Upload or download entire folders recursively, or drag files/folders straight from Windows Explorer.
+- **Dual-Pane Browser & Diff**: Side-by-side local vs. remote comparison with quick paths and on-demand sync.
+
+### Host Telemetry & Operations
+- **Customizable Telemetry Sidebar**: Dedicated polling channel displaying CPU trends, memory, swap, network throughput, disk usage, top processes, and mounts with configurable intervals, collapsible cards, visibility toggles, and warning thresholds.
+- **Resource History & Alert Rules**: Extended resource trend charts, peak tracking, and threshold alerts with cooldown timers.
+- **Process & Service Management**: Search, sort, inspect, and terminate remote processes with confirmation; browse, inspect logs, and control `systemd` units.
+- **Docker Panel**: Inspect container status, CPU/memory usage, port mappings, container logs, and start/stop/restart actions.
+- **SSH Port Forwarding**: Visual management and toggling for Local, Remote, and Dynamic (SOCKS5) port forwarding rules.
+
+### Themes & Internationalization
+- **7 Synchronized Themes** (UI + terminal):
+  - Dark: `Obsidian Emerald` (default), `Tokyo Night`, `Dracula`, `GitHub Dark`
+  - Light: `Morning Mist`, `Solarized Light`, `Catppuccin Latte`
+- **Bilingual UI**: Switch seamlessly between **简体中文 (`zh-CN`)** and **English (`en`)** in Settings with live preview.
+
+---
+
+## Keyboard Shortcuts
+
+| Category | Shortcut | Action |
+| --- | --- | --- |
+| **Workbench** | `Ctrl + N` | New connection |
+| | `Ctrl + B` | Toggle connection sidebar |
+| | `Ctrl + ,` | Open Workbench & Terminal Settings |
+| | `F1` / `Ctrl + /` | Open Keyboard Shortcuts |
+| **Tabs** | `Ctrl + W` | Close active session |
+| | `Ctrl + Tab` / `Ctrl + Shift + Tab` | Next / Previous tab |
+| | `Ctrl + 1` ~ `9` | Jump to tab by index |
+| **Terminal & Panels** | `Ctrl + F` | Search terminal output |
+| | `Ctrl + Shift + L` | Clear terminal screen |
+| | `Ctrl + Shift + C` / `V` | Copy / Paste |
+| | `Ctrl + =` / `-` | Increase / Decrease font size |
+| | `Ctrl + E` | Toggle SFTP files panel |
+| | `Ctrl + M` | Toggle Host Telemetry panel |
+| **Commands** | `Ctrl + H` | Open command history |
+| | `Ctrl + K` | Open command snippets |
+| | `Alt + 1` ~ `9` | Trigger bound snippet |
+| | `↑` / `↓` | Quick recall history inside terminal |
+
+---
+
+## Quick Start
+
+### Prerequisites
+- **OS**: Windows 10 / 11 (64-bit)
+- **Runtime**: [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
+- **Toolchain**:
+  - [Node.js](https://nodejs.org/) 22+
+  - [Rust](https://www.rust-lang.org/) 1.90+
+  - Visual Studio 2022 Build Tools (MSVC x64 + Windows 10/11 SDK)
+
+### Run & Build
 
 ```powershell
-node 'D:\coding environment\tools\npm\package\bin\npm-cli.js' install --cache 'D:\coding environment\npm-cache'
-$env:CARGO_TARGET_DIR = 'D:\coding environment\cargo-cache\finalpowershell'
-node 'D:\coding environment\tools\npm\package\bin\npm-cli.js' run tauri dev
+# Install frontend dependencies
+npm install
+
+# Start development mode (Tauri + Vite HMR)
+npm run tauri dev
+
+# Build frontend production bundle only
+npm run build
+
+# Build Windows release executables & installers (.exe / .msi)
+npm run tauri build
 ```
 
-开发预览会使用系统 WebView2。如果系统未安装，需要安装 Microsoft Edge WebView2 Runtime。
+> On environments configured with portable Windows build tools, you can also use `.\scripts\dev-env.ps1 dev`, `.\scripts\dev-env.ps1 check`, and `.\scripts\dev-env.ps1 build`.
 
-## 检查与构建
+### Verification
 
 ```powershell
-node 'D:\coding environment\tools\npm\package\bin\npm-cli.js' run build
-$env:CARGO_TARGET_DIR = 'D:\coding environment\cargo-cache\finalpowershell'
+# TypeScript check & Vite build
+npm run build
+
+# Rust unit & integration tests
 cargo test --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
-node 'D:\coding environment\tools\npm\package\bin\npm-cli.js' run tauri build
+
+# Rust Clippy lint check
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
 
-## 使用
+---
 
-1. 点击左侧 `+`，填写主机、端口、用户名，选择密码或私钥认证。
-2. 首次点击连接卡片时，请通过管理员等可信渠道核对指纹，再点击“只接受本次”或“接受并保存”。后续点击卡片会使用已保存的主机密钥和凭据直接连接，密钥变化仍会拒绝登录。
-3. 在终端中操作，左侧查看 Linux 实时资源信息；右侧文件面板会在登录后自动加载根目录。资源与文件面板均可隐藏和拖动调宽，并为终端保留最小空间。
-4. 通过文件夹图标隐藏或显示文件面板，拖动其左边缘调宽。右键文件查看、编辑或下载，右键空白处上传和刷新。小窗口会自动收起文件面板以保留终端空间。
+## Project Structure
 
-## 数据与边界
+```text
+RufeShell/
+├── index.html                  # App entry HTML
+├── package.json                # Frontend dependencies & scripts
+├── vite.config.ts              # Vite build config
+├── scripts/                    # Windows portable toolchain helper scripts
+├── src/                        # TypeScript frontend
+│   ├── main.ts                 # App bootstrap, window controls & UAC elevation UI
+│   ├── api.ts                  # Tauri IPC bindings & native file dialogs
+│   ├── state.ts                # Workbench & session state store
+│   ├── themes.ts               # Light/dark themes & terminal font presets
+│   ├── i18n/                   # Simplified Chinese / English localization
+│   ├── styles/                 # Design tokens, layout, session & dialog CSS
+│   ├── utils/                  # Sensitive command filtering & helpers
+│   └── ui/                     # Connections, terminal tools, SFTP, telemetry & ops panels
+└── src-tauri/                  # Rust / Tauri 2 backend
+    ├── Cargo.toml
+    ├── tauri.conf.json
+    ├── capabilities/           # Tauri 2 permission capabilities
+    ├── tests/                  # SSH/SFTP & credential integration tests
+    └── src/
+        ├── lib.rs              # Tauri commands & app setup
+        ├── domain.rs           # Domain models, settings & validation
+        ├── store.rs            # Atomic JSON config persistence with backups
+        ├── credentials.rs      # Windows Credential Manager bindings
+        ├── host_keys.rs        # known_hosts fingerprint store
+        ├── sessions.rs         # SSH sessions, PTY stream, SFTP & metrics
+        ├── local_pty.rs        # Windows ConPTY shells & UAC elevation helpers
+        ├── transfers.rs        # Resumable chunked transfers & SHA-256 verification
+        ├── forwarding.rs       # Local / Remote / Dynamic SSH port forwarding
+        └── ops.rs              # Remote process, systemd & Docker control
+```
 
-默认数据目录为 `%LOCALAPPDATA%\FinalPowerShell`。开发测试可以设置 `FINALPOWERSHELL_DATA_DIR` 到独立目录。
+---
 
-已保存的主机密钥会在下次连接时自动校验；如果密钥发生变化，程序会显示旧指纹并警告。当前尚未实现加密私钥口令、自动重连、目录递归传输、端口转发、代理、云同步和团队功能。不要把开发预览版视为 FinalShell 的完整替代品。
+## Security & Storage
 
-## 本次验收记录
-
-- 前端 TypeScript 和 Vite 构建通过。
-- Rust 单元测试通过，`clippy -D warnings` 通过。
-- 本地 SSH/SFTP 集成测试通过：自动读取主机公钥和 SHA256 指纹、密码认证、双会话同时输入与文件读取、终端输入回传、窗口尺寸同步、资源采集、SFTP 初始化和目录列表。测试服务仅绑定 `127.0.0.1`，使用临时主机密钥和临时测试密码。
-- WebView 界面自动化验收通过：已信任服务器一键连接、终端输入、文件列表、右键文本查看编辑与重新读取、两侧面板隐藏及拖动调宽、资源连续刷新与临时失败后自动恢复。运行前需启动 `FINALPOWERSHELL_E2E=1` 的隔离实例，测试脚本也会检查此环境变量。
-- Windows 原生存储临时凭据写入、读回与删除测试通过，未读取真实服务器密码。
-- Windows 调试版可执行文件已生成并启动，窗口进程响应正常。
-- 尚未使用真实 SSH 服务器验收；首次使用前请先在测试服务器上验证。
+- **Data Directory**: Settings, profiles, and `known_hosts` are stored under `%LOCALAPPDATA%\RufeShell` (with automatic migration from legacy `%LOCALAPPDATA%\FinalPowerShell`, or override via `RUFESHELL_DATA_DIR`).
+- **Secret Isolation**: Connection profiles never save plain-text passwords; secrets are kept in Windows Credential Manager.
+- **Safe Persistence**: Configuration writes preserve backups and use atomic file replacement on Windows.
+- **File Safety**: Binary files are blocked from text editing, optional `.bak` remote backups are supported before edits, and large/sync transfers support SHA-256 verification.
