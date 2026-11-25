@@ -324,6 +324,7 @@ export interface Session {
   id: string;
   kind: "ssh" | "local";
   localShell?: LocalShellKind;
+  localElevated?: boolean;
   profile: Connection;
   terminal: Terminal;
   fit: FitAddon;

@@ -29,7 +29,6 @@ import {
   initConnections,
   loadConnections,
   renderConnections,
-  syncLocalAdminToggle,
   toggleSidebar,
 } from "./ui/connections.ts";
 import { initHistoryUI, openHistoryDialog, setHistorySendHandler } from "./ui/history.ts";
@@ -155,15 +154,6 @@ function initAdminLaunchControls(): void {
   syncAdminLaunchButton();
   onLanguageChange(syncAdminLaunchButton);
 
-  void api
-    .isElevated()
-    .then(elevated => {
-      state.isElevated = elevated;
-      syncAdminLaunchButton();
-      syncLocalAdminToggle();
-    })
-    .catch(() => undefined);
-
   $("#admin-launch-btn").addEventListener("click", () => {
     if (state.isElevated) {
       notify(t("titlebar.adminAlreadyNotify"));
@@ -186,8 +176,16 @@ function initAdminLaunchControls(): void {
 mountShell();
 initCustomSelects();
 initWindowControls();
+await Promise.all([
+  loadWorkbenchState(),
+  api
+    .isElevated()
+    .then(elevated => {
+      state.isElevated = elevated;
+    })
+    .catch(() => undefined),
+]);
 initAdminLaunchControls();
-await loadWorkbenchState();
 void api.syncTrayLanguage(getLanguage()).catch(() => undefined);
 onLanguageChange(() => void api.syncTrayLanguage(getLanguage()).catch(() => undefined));
 

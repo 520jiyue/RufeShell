@@ -3,6 +3,7 @@ import { LANGUAGE_OPTIONS, onLanguageChange, setLanguage, t } from "../i18n/inde
 import { getActiveSession, persistWorkbenchState, state } from "../state.ts";
 import { applyAppTheme, FONT_PRESETS, getFontLabel, getThemeLabel, TERMINAL_THEMES } from "../themes.ts";
 import { $, escapeHtml, notify } from "../utils.ts";
+import { syncSelectUI } from "./selects.ts";
 import { syncLocalAdminToggle } from "./connections.ts";
 import { fetchAndRenderMetrics, restartAllMetricsTimers } from "./metrics.ts";
 import { applySettingsToAllTerminals } from "./terminalTools.ts";
@@ -51,17 +52,25 @@ function populateSettingsSelects(): void {
     : "ask";
 
   const localPrivilegeSelect = $<HTMLSelectElement>("#setting-local-privilege");
-  const currentPrivilege = localPrivilegeSelect.value || s.local_shell_privilege || "ask";
-  localPrivilegeSelect.innerHTML = [
-    { value: "ask", label: t("settings.privAsk") },
-    { value: "standard", label: t("settings.privStandard") },
-    { value: "admin", label: t("settings.privAdmin") },
-  ]
-    .map(item => `<option value="${item.value}">${escapeHtml(item.label)}</option>`)
-    .join("");
-  localPrivilegeSelect.value = ["ask", "standard", "admin"].includes(currentPrivilege)
-    ? currentPrivilege
-    : "ask";
+  if (state.isElevated) {
+    localPrivilegeSelect.innerHTML = `<option value="inherited">${escapeHtml(t("settings.privInherited"))}</option>`;
+    localPrivilegeSelect.value = "inherited";
+    localPrivilegeSelect.disabled = true;
+  } else {
+    localPrivilegeSelect.disabled = false;
+    const currentPrivilege = localPrivilegeSelect.value || s.local_shell_privilege || "ask";
+    localPrivilegeSelect.innerHTML = [
+      { value: "ask", label: t("settings.privAsk") },
+      { value: "standard", label: t("settings.privStandard") },
+      { value: "admin", label: t("settings.privAdmin") },
+    ]
+      .map(item => `<option value="${item.value}">${escapeHtml(item.label)}</option>`)
+      .join("");
+    localPrivilegeSelect.value = ["ask", "standard", "admin"].includes(currentPrivilege)
+      ? currentPrivilege
+      : "ask";
+  }
+  syncSelectUI(localPrivilegeSelect);
 }
 
 export function openSettingsDialog(): void {
@@ -152,11 +161,15 @@ export function initSettingsUI(): void {
     event.preventDefault();
     const nextLang = setLanguage(languageSelect.value, false);
 
+    const localPrivValue = state.isElevated
+      ? state.workbench.settings.local_shell_privilege || "ask"
+      : $<HTMLSelectElement>("#setting-local-privilege").value || "ask";
+
     state.workbench.settings = {
       ...state.workbench.settings,
       language: nextLang,
       close_action: $<HTMLSelectElement>("#setting-close-action").value || "ask",
-      local_shell_privilege: $<HTMLSelectElement>("#setting-local-privilege").value || "ask",
+      local_shell_privilege: localPrivValue,
       font_family: $<HTMLSelectElement>("#setting-font-family").value,
       font_size: Math.max(11, Math.min(24, Number($<HTMLInputElement>("#setting-font-size").value) || 14)),
       theme: themeSelect.value,

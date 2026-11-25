@@ -98,6 +98,11 @@ export function renderTabs(): void {
         <div class="session-tab ${session.id === state.activeId ? "active" : ""}">
           <button type="button" data-activate="${session.id}">
             <span class="status-dot ${session.status}"></span>
+            ${
+              session.kind === "local" && session.localElevated
+                ? `<span class="tab-admin-badge" title="${escapeHtml(t("session.localAdminBadgeTitle"))}">${icon("shield")}</span>`
+                : ""
+            }
             <span>${session.kind === "local" ? escapeHtml(t("session.localPrefix")) : ""}${escapeHtml(session.profile.name)}</span>
           </button>
           <button type="button" class="tab-close" data-close="${session.id}" title="${escapeHtml(t("session.closeTabTitle"))}">${icon("x")}</button>
@@ -148,7 +153,7 @@ export function activateSession(id: string): void {
   $<HTMLInputElement>("#remote-path").value = session.path;
   $("#session-title").textContent = session.profile.name;
   $("#session-address").textContent = isLocal
-    ? t("session.localAddress")
+    ? t(session.localElevated ? "session.localElevatedAddress" : "session.localAddress")
     : `${session.profile.username}@${session.profile.host}:${session.profile.port}`;
   updateSessionBadge(session.status);
   updateReconnectUI(session);
@@ -274,6 +279,7 @@ function buildSessionInstance(
   profile: Connection,
   kind: "ssh" | "local",
   localShell?: LocalShellKind,
+  localElevated = false,
 ): Session {
   const settings = state.workbench.settings;
   const terminal = new Terminal({
@@ -309,6 +315,7 @@ function buildSessionInstance(
     id,
     kind,
     localShell,
+    localElevated,
     profile,
     terminal,
     fit,
@@ -368,14 +375,18 @@ export function createSession(id: string, profile: Connection): void {
     .catch(error => notify(friendlyError(error), true));
 }
 
-export async function openLocalTerminalSession(kind: LocalShellKind): Promise<void> {
+export async function openLocalTerminalSession(
+  kind: LocalShellKind,
+  elevated = false,
+): Promise<void> {
+  const effectiveElevated = state.isElevated || elevated;
   const labelMap: Record<LocalShellKind, string> = {
     power_shell: t("session.localPwsh"),
     cmd: t("session.localCmd"),
     wsl: t("session.localWsl"),
   };
   try {
-    const id = await api.openLocalTerminal(kind);
+    const id = await api.openLocalTerminal(kind, effectiveElevated);
     const profile: Connection = {
       id: `local-profile-${kind}`,
       name: labelMap[kind],
@@ -385,7 +396,7 @@ export async function openLocalTerminalSession(kind: LocalShellKind): Promise<vo
       auth: "password",
       private_key_path: null,
     };
-    const session = buildSessionInstance(id, profile, "local", kind);
+    const session = buildSessionInstance(id, profile, "local", kind, effectiveElevated);
     activateSession(id);
     requestAnimationFrame(() => {
       session.fit.fit();

@@ -5,6 +5,7 @@ mod host_keys;
 mod local_pty;
 mod ops;
 pub mod sessions;
+mod single_instance;
 mod store;
 mod transfers;
 
@@ -33,6 +34,15 @@ use tauri::{
 use transfers::TransferManager;
 
 #[cfg(target_os = "windows")]
+#[repr(C)]
+struct DwmMargins {
+    cx_left_width: i32,
+    cx_right_width: i32,
+    cy_top_height: i32,
+    cy_bottom_height: i32,
+}
+
+#[cfg(target_os = "windows")]
 #[link(name = "dwmapi")]
 extern "system" {
     fn DwmSetWindowAttribute(
@@ -41,24 +51,72 @@ extern "system" {
         pv_attribute: *const u32,
         cb_attribute: u32,
     ) -> i32;
+    fn DwmExtendFrameIntoClientArea(
+        hwnd: *mut std::ffi::c_void,
+        p_mar_inset: *const DwmMargins,
+    ) -> i32;
 }
 
 #[cfg(target_os = "windows")]
 fn hide_frameless_window_border(app: &tauri::App) {
     if let Some(window) = app.get_webview_window("main") {
         if let Ok(hwnd) = window.hwnd() {
+            const DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1: u32 = 19;
+            const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
+            const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
             const DWMWA_BORDER_COLOR: u32 = 34;
+            const DWMWA_CAPTION_COLOR: u32 = 35;
+            const DWMWCP_ROUND: u32 = 2;
             const DWMWA_COLOR_NONE: u32 = 0xFFFFFFFE;
+            // COLORREF (0x00BBGGRR) matching --bg-titlebar (#0f1518)
+            const DARK_TITLEBAR_COLORREF: u32 = 0x0018_150F;
+            const DARK_MODE_ENABLED: u32 = 1;
+            let shadow_margins = DwmMargins {
+                cx_left_width: 0,
+                cx_right_width: 0,
+                cy_top_height: 0,
+                cy_bottom_height: 1,
+            };
+
             unsafe {
+                let _ = DwmSetWindowAttribute(
+                    hwnd.0,
+                    DWMWA_USE_IMMERSIVE_DARK_MODE,
+                    &DARK_MODE_ENABLED,
+                    std::mem::size_of::<u32>() as u32,
+                );
+                let _ = DwmSetWindowAttribute(
+                    hwnd.0,
+                    DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1,
+                    &DARK_MODE_ENABLED,
+                    std::mem::size_of::<u32>() as u32,
+                );
+                let _ = DwmSetWindowAttribute(
+                    hwnd.0,
+                    DWMWA_WINDOW_CORNER_PREFERENCE,
+                    &DWMWCP_ROUND,
+                    std::mem::size_of::<u32>() as u32,
+                );
                 let _ = DwmSetWindowAttribute(
                     hwnd.0,
                     DWMWA_BORDER_COLOR,
                     &DWMWA_COLOR_NONE,
                     std::mem::size_of::<u32>() as u32,
                 );
+                let _ = DwmSetWindowAttribute(
+                    hwnd.0,
+                    DWMWA_CAPTION_COLOR,
+                    &DARK_TITLEBAR_COLORREF,
+                    std::mem::size_of::<u32>() as u32,
+                );
+                let _ = DwmExtendFrameIntoClientArea(hwnd.0, &shadow_margins);
             }
         }
     }
+}
+
+pub fn maybe_run_elevated_pty_bridge() -> Option<i32> {
+    local_pty::maybe_run_elevated_pty_bridge()
 }
 
 #[doc(hidden)]
@@ -144,6 +202,7 @@ struct AppState {
     transfers: TransferManager,
     forwards: ForwardManager,
     tray_items: std::sync::Mutex<Option<TrayMenuHandles>>,
+    instance_guard: std::sync::Mutex<Option<single_instance::SingleInstanceGuard>>,
 }
 
 #[tauri::command]
@@ -449,21 +508,24 @@ fn is_elevated() -> bool {
 }
 
 #[tauri::command]
-async fn relaunch_as_admin(app: AppHandle) -> Result<(), AppError> {
+async fn relaunch_as_admin(app: AppHandle, state: State<'_, AppState>) -> Result<(), AppError> {
     if local_pty::is_process_elevated() {
         return Ok(());
     }
-    local_pty::relaunch_as_admin()?;
+    if let Ok(mut guard) = state.instance_guard.lock() {
+        *guard = None;
+    }
+    if let Err(error) = local_pty::relaunch_as_admin() {
+        if let Ok(mut guard) = state.instance_guard.lock() {
+            *guard = single_instance::try_acquire();
+        }
+        return Err(error);
+    }
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(120));
         app.exit(0);
     });
     Ok(())
-}
-
-#[tauri::command]
-async fn open_elevated_local_terminal(kind: LocalShellKind) -> Result<(), AppError> {
-    local_pty::spawn_elevated_shell(kind)
 }
 
 #[tauri::command]
@@ -497,10 +559,21 @@ fn app_version(app: AppHandle) -> String {
 #[tauri::command]
 async fn open_local_terminal(
     kind: LocalShellKind,
+    elevated: Option<bool>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String, AppError> {
-    let (session_id, events) = state.local_pty.spawn(kind)?;
+    let want_elevated = elevated.unwrap_or(false);
+    let pty = state.local_pty.clone();
+    let (session_id, events) = tauri::async_runtime::spawn_blocking(move || {
+        if want_elevated {
+            pty.spawn_elevated(kind)
+        } else {
+            pty.spawn(kind)
+        }
+    })
+    .await
+    .map_err(|err| AppError::Io(format!("启动本地终端任务失败：{err}")))??;
     tauri::async_runtime::spawn(forward_events(session_id.clone(), events, app));
     Ok(session_id)
 }
@@ -936,6 +1009,10 @@ async fn system_metrics(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let Some(instance_guard) = single_instance::try_acquire() else {
+        single_instance::notify_existing_instance();
+        return;
+    };
     let data_dir = dirs_data();
     let store = Store::open(data_dir.clone()).expect("无法初始化本地连接数据库");
     let workbench = WorkbenchStore::open(data_dir.clone()).expect("无法初始化工作台配置数据库");
@@ -951,6 +1028,7 @@ pub fn run() {
         .setup(move |app| {
             #[cfg(target_os = "windows")]
             hide_frameless_window_border(app);
+            single_instance::register_wake_handler(app.handle());
             setup_system_tray(app, &initial_language)?;
             Ok(())
         })
@@ -990,6 +1068,7 @@ pub fn run() {
             transfers: TransferManager::new(),
             forwards: ForwardManager::new(),
             tray_items: std::sync::Mutex::new(None),
+            instance_guard: std::sync::Mutex::new(Some(instance_guard)),
         })
         .invoke_handler(tauri::generate_handler![
             list_connections,
@@ -1007,7 +1086,6 @@ pub fn run() {
             connect_saved,
             is_elevated,
             relaunch_as_admin,
-            open_elevated_local_terminal,
             hide_to_tray,
             exit_app,
             sync_tray_language,

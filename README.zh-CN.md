@@ -127,7 +127,7 @@ npm run tauri dev
 # 仅构建前端资源
 npm run build
 
-# 打包 Windows 发行版安装包（.exe / .msi）
+# 打包 Windows 发行版安装包
 npm run tauri build
 ```
 

@@ -127,7 +127,7 @@ npm run tauri dev
 # Build frontend production bundle only
 npm run build
 
-# Build Windows release executables & installers (.exe / .msi)
+# Build Windows release executables & installers
 npm run tauri build
 ```
 

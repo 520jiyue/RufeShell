@@ -40,7 +40,7 @@ jobs:
           - name: Linux x64
             runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            assetPlatform: Linux
+            assetPlatform: linux
             assetArch: x64
             signaturePlatform: linux
             signatureArch: x86_64
@@ -101,8 +101,8 @@ jobs:
           releaseBody: |
             RufeShell is a modern SSH and local terminal workbench built with Rust and Tauri.
 
-            - Windows: NSIS `.exe` and MSI `.msi` installers.
-            - Linux: AppImage for x64 systems.
+            - Windows: x64/ARM64 NSIS installers and an x64 portable archive.
+            - Linux: AppImage and Debian packages for x64 systems.
             - macOS: Apple Silicon and Intel `.dmg` installers and `.app.tar.gz` archives.
 
             Windows ConPTY and administrator tools require Windows; SSH, SFTP, monitoring, forwarding and other remote features remain available on other desktop platforms.
@@ -113,8 +113,17 @@ jobs:
           assetNamePattern: RufeShell_v[version]_${{ matrix.assetPlatform }}_[arch][setup][ext]
           updaterJsonPreferNsis: true
           includeUpdaterJson: false
-          args: --target ${{ matrix.target }} ${{ matrix.runner == 'ubuntu-22.04' && '--bundles appimage' || '' }}
+          args: --target ${{ matrix.target }} ${{ matrix.runner == 'windows-latest' && '--bundles nsis' || matrix.runner == 'ubuntu-22.04' && '--bundles appimage,deb' || '' }}
           retryAttempts: 2
+
+      - name: Package Windows x64 portable archive
+        if: matrix.assetPlatform == 'windows' && matrix.assetArch == 'x64'
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $executable = Get-Item "src-tauri/target/${{ matrix.target }}/release/finalpowershell.exe"
+          $archive = "src-tauri/target/${{ matrix.target }}/release/bundle/RufeShell_v${version}_windows_x64-portable.zip"
+          Compress-Archive -LiteralPath $executable.FullName -DestinationPath $archive
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -142,7 +151,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: v${{ needs.publish.outputs.version }}
         run: |
-          npm install --no-save adm-zip @octokit/rest
+          npm install --no-save @octokit/rest
           node .github/finalize-release.mjs
 
 

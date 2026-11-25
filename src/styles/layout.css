@@ -583,6 +583,18 @@
   width: 13px;
 }
 
+.tab-admin-badge {
+  display: inline-flex;
+  align-items: center;
+  color: var(--warn);
+  flex: none;
+}
+
+.tab-admin-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
 /* Welcome command center */
 .welcome {
   position: relative;

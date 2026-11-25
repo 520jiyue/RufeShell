@@ -66,14 +66,12 @@ export const api = {
     invoke<string>("connect_saved", { profileId, timeoutSecs: timeoutSecs ?? null }),
   isElevated: () => invoke<boolean>("is_elevated"),
   relaunchAsAdmin: () => invoke<void>("relaunch_as_admin"),
-  openElevatedLocalTerminal: (kind: LocalShellKind) =>
-    invoke<void>("open_elevated_local_terminal", { kind }),
   hideToTray: () => invoke<void>("hide_to_tray"),
   exitApp: () => invoke<void>("exit_app"),
   syncTrayLanguage: (language: string) => invoke<void>("sync_tray_language", { language }),
   appVersion: () => invoke<string>("app_version"),
-  openLocalTerminal: (kind: LocalShellKind) =>
-    invoke<string>("open_local_terminal", { kind }),
+  openLocalTerminal: (kind: LocalShellKind, elevated = false) =>
+    invoke<string>("open_local_terminal", { kind, elevated }),
   sessionStatus: (sessionId: string) => invoke<Status>("session_status", { sessionId }),
   terminalInput: (sessionId: string, data: string) =>
     invoke<void>("terminal_input", { sessionId, data }),

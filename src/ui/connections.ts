@@ -252,35 +252,17 @@ function getLocalShellLabel(kind: LocalShellKind): string {
 }
 
 function launchLocalShellWithPrivilege(kind: LocalShellKind, privilege: "standard" | "admin"): void {
-  if (privilege === "admin") {
-    if (state.isElevated) {
-      void openLocalTerminalSession(kind);
-      return;
-    }
-    void api
-      .openElevatedLocalTerminal(kind)
-      .then(() => notify(t("sidebar.localAdminOpened", { shell: getLocalShellLabel(kind) })))
-      .catch(error => notify(friendlyError(error), true));
-    return;
-  }
-
-  if (state.isElevated) {
-    notify(t("localPriv.elevatedNote"));
-  }
-  void openLocalTerminalSession(kind);
+  const effectiveElevated = state.isElevated || privilege === "admin";
+  void openLocalTerminalSession(kind, effectiveElevated);
 }
 
 function openLocalShellPrivilegeDialog(kind: LocalShellKind): void {
   pendingLocalShell = kind;
   const label = getLocalShellLabel(kind);
   $("#local-priv-title").textContent = t("localPriv.title", { shell: label });
-  $("#local-priv-desc").textContent = state.isElevated
-    ? t("localPriv.elevatedNote")
-    : t("localPriv.desc");
+  $("#local-priv-desc").textContent = t("localPriv.desc");
   $("#local-priv-standard-hint").textContent = t("localPriv.standardHint");
-  $("#local-priv-admin-hint").textContent = state.isElevated
-    ? t("localPriv.adminBuiltinHint")
-    : t("localPriv.adminHint");
+  $("#local-priv-admin-hint").textContent = t("localPriv.adminHint");
   $<HTMLInputElement>("#local-priv-remember").checked = false;
   $<HTMLDialogElement>("#local-shell-privilege-dialog").showModal();
 }
@@ -297,7 +279,7 @@ export function syncLocalAdminToggle(): void {
   btn.classList.toggle("is-admin", isAdminEffective);
 
   if (state.isElevated) {
-    label.textContent = t("sidebar.privAdmin");
+    label.textContent = t("sidebar.privAppAdmin");
     btn.title = t("sidebar.localAdminActiveTitle");
   } else {
     const key =
@@ -356,6 +338,10 @@ export function initConnections(): void {
   document.querySelectorAll<HTMLButtonElement>("[data-local-shell]").forEach(btn =>
     btn.addEventListener("click", () => {
       const kind = btn.dataset.localShell as LocalShellKind;
+      if (state.isElevated) {
+        launchLocalShellWithPrivilege(kind, "admin");
+        return;
+      }
       const mode = getLocalPrivilegeMode();
       if (mode === "ask") {
         openLocalShellPrivilegeDialog(kind);

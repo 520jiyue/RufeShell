@@ -783,7 +783,7 @@ export function mountShell(): void {
               <span class="priv-choice-icon">${icon("shield")}</span>
               <span class="priv-choice-copy">
                 <strong data-i18n="localPriv.adminBtn">管理员权限</strong>
-                <small id="local-priv-admin-hint" data-i18n="localPriv.adminHint">通过 Windows UAC 提权在新窗口中运行</small>
+                <small id="local-priv-admin-hint" data-i18n="localPriv.adminHint">通过 Windows UAC 提权后在内置标签页中运行</small>
               </span>
             </button>
           </div>
