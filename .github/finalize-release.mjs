@@ -89,7 +89,7 @@ if (!assets.some(asset => asset.name === portableName)) {
 }
 
 for (const asset of assets) {
-  if (!expectedAssets.has(asset.name)) {
+  if (!expectedAssets.has(asset.name) || asset.name === 'latest.json') {
     await octokit.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: asset.id });
   }
 }
