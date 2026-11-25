@@ -68,8 +68,6 @@ node 'D:\coding environment\tools\npm\package\bin\npm-cli.js' run tauri build
 
 已保存的主机密钥会在下次连接时自动校验；如果密钥发生变化，程序会显示旧指纹并警告。当前尚未实现加密私钥口令、自动重连、目录递归传输、端口转发、代理、云同步和团队功能。不要把开发预览版视为 FinalShell 的完整替代品。
 
-静态逆向研究和后续模块开发规范见 `research` 目录。研究仅针对本地程序文件，没有读取或导出原程序中的连接凭据。
-
 ## 本次验收记录
 
 - 前端 TypeScript 和 Vite 构建通过。
