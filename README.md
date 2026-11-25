@@ -191,3 +191,9 @@ RufeShell/
 - **Secret Isolation**: Connection profiles never save plain-text passwords; secrets are kept in Windows Credential Manager.
 - **Safe Persistence**: Configuration writes preserve backups and use atomic file replacement on Windows.
 - **File Safety**: Binary files are blocked from text editing, optional `.bak` remote backups are supported before edits, and large/sync transfers support SHA-256 verification.
+
+---
+
+## License
+
+RufeShell is released under the [MIT License](LICENSE).

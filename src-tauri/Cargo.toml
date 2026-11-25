@@ -4,6 +4,7 @@ version = "1.2.0"
 edition = "2021"
 rust-version = "1.90"
 description = "A local-first remote operations workbench"
+license = "MIT"
 
 [lib]
 name = "finalpowershell_lib"
