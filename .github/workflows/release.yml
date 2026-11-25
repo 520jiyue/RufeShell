@@ -17,6 +17,8 @@ jobs:
   publish:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
+    outputs:
+      version: ${{ steps.build.outputs.appVersion }}
     strategy:
       fail-fast: false
       matrix:
@@ -25,22 +27,37 @@ jobs:
             runner: windows-latest
             target: x86_64-pc-windows-msvc
             assetPlatform: windows
+            assetArch: x64
+            signaturePlatform: windows
+            signatureArch: x86_64
           - name: Windows ARM64
             runner: windows-latest
             target: aarch64-pc-windows-msvc
             assetPlatform: windows
+            assetArch: arm64
+            signaturePlatform: windows
+            signatureArch: aarch64
           - name: Linux x64
             runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             assetPlatform: Linux
+            assetArch: x64
+            signaturePlatform: linux
+            signatureArch: x86_64
           - name: macOS Apple Silicon
             runner: macos-latest
             target: aarch64-apple-darwin
             assetPlatform: darwin
+            assetArch: aarch64
+            signaturePlatform: darwin
+            signatureArch: aarch64
           - name: macOS Intel
             runner: macos-15-intel
             target: x86_64-apple-darwin
             assetPlatform: darwin
+            assetArch: x64
+            signaturePlatform: darwin
+            signatureArch: x86_64
 
     steps:
       - name: Check out source
@@ -73,6 +90,7 @@ jobs:
 
       - name: Build and upload release packages
         uses: tauri-apps/tauri-action@v0
+        id: build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -94,6 +112,88 @@ jobs:
           prerelease: false
           assetNamePattern: RufeShell_v[version]_${{ matrix.assetPlatform }}_[arch][setup][ext]
           updaterJsonPreferNsis: true
+          includeUpdaterJson: false
           args: --target ${{ matrix.target }} ${{ matrix.runner == 'ubuntu-22.04' && '--bundles appimage,deb,rpm' || '' }}
           retryAttempts: 2
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rufeshell-${{ matrix.signaturePlatform }}-${{ matrix.signatureArch }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/**
+          if-no-files-found: error
+          retention-days: 1
+
+  finalize:
+    name: Finalize release
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: packages
+
+      - name: Package signatures and updater manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: v${{ needs.publish.outputs.version }}
+        run: |
+          npm install --no-save adm-zip @octokit/rest
+          node --input-type=module <<'EOF'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import AdmZip from 'adm-zip';
+          import { Octokit } from '@octokit/rest';
+
+          const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+          const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
+          const tag = process.env.RELEASE_TAG;
+          const version = tag.replace(/^v/, '');
+          const release = (await octokit.rest.repos.getReleaseByTag({ owner, repo, tag })).data;
+          const assets = (await octokit.rest.repos.listReleaseAssets({ owner, repo, release_id: release.id, per_page: 100 })).data;
+          const manifest = { version, notes: release.body, pub_date: new Date().toISOString(), platforms: {} };
+          const signatures = fs.globSync('packages/**/*.sig').map(file => path.resolve(file));
+
+          for (const signaturePath of signatures) {
+            const bundlePath = signaturePath.slice(0, -4);
+            const asset = assets.find(item => item.name === path.basename(bundlePath));
+            if (!asset) throw new Error(`Missing release package for ${path.basename(bundlePath)}`);
+            const directory = signaturePath.split(path.sep).find(part => /^rufeshell-(windows|linux|darwin)-(x86_64|aarch64)$/.test(part));
+            if (!directory) throw new Error(`Unknown artifact directory: ${signaturePath}`);
+            const [, platform, arch] = directory.match(/^rufeshell-(windows|linux|darwin)-(x86_64|aarch64)$/);
+            const bundle = signaturePath.includes('.app.tar.gz') ? 'app' : signaturePath.includes('.AppImage') ? 'appimage' : signaturePath.endsWith('.exe.sig') ? 'nsis' : signaturePath.endsWith('.msi.sig') ? 'msi' : path.extname(bundlePath).slice(1);
+            const entry = { signature: fs.readFileSync(signaturePath, 'utf8'), url: asset.browser_download_url };
+            manifest.platforms[`${platform}-${arch}-${bundle}`] = entry;
+            if (['nsis', 'app', 'appimage'].includes(bundle)) manifest.platforms[`${platform}-${arch}`] = entry;
+          }
+
+          for (const directory of fs.readdirSync('packages')) {
+            const match = directory.match(/^rufeshell-(windows|linux|darwin)-(x86_64|aarch64)$/);
+            if (!match) continue;
+            const [, platform, arch] = match;
+            const zip = new AdmZip();
+            for (const file of signatures.filter(file => file.includes(`${directory}${path.sep}`))) zip.addLocalFile(file);
+            zip.writeZip(`RufeShell_v${version}_${platform}_${arch}-Signatures.zip`);
+          }
+
+          for (const asset of assets) {
+            if (asset.name.endsWith('.sig') || asset.name === 'latest.json' || asset.name.endsWith('-Signatures.zip')) {
+              await octokit.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: asset.id });
+            }
+          }
+
+          for (const directory of fs.readdirSync('packages')) {
+            const match = directory.match(/^rufeshell-(windows|linux|darwin)-(x86_64|aarch64)$/);
+            if (!match) continue;
+            const [, platform, arch] = match;
+            const name = `RufeShell_v${version}_${platform}_${arch}-Signatures.zip`;
+            const data = fs.readFileSync(name);
+            await octokit.rest.repos.uploadReleaseAsset({ owner, repo, release_id: release.id, name, data, headers: { 'content-type': 'application/zip', 'content-length': data.length } });
+          }
+
+          const data = Buffer.from(JSON.stringify(manifest, null, 2));
+          await octokit.rest.repos.uploadReleaseAsset({ owner, repo, release_id: release.id, name: 'latest.json', data, headers: { 'content-type': 'application/json', 'content-length': data.length } });
+          EOF
+
 
