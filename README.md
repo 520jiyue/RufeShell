@@ -61,7 +61,7 @@ npm run tauri dev
 前往 [GitHub Releases](https://github.com/520jiyue/RufeShell/releases) 下载对应平台的预编译安装包：
 
 - **Windows（`x64` / `arm64`）**：推荐下载 **NSIS `.exe` 安装包**（支持应用内一键自动更新），亦提供 `.msi` 安装包；具备完整的本地 ConPTY 与 UAC 提权体验。
-- **macOS（`Apple Silicon` / `Intel`）与 Linux（`x64 AppImage`）**：支持远程 SSH、SFTP、主机遥测、端口转发与主机运维等功能 *（Windows ConPTY 本地终端与 UAC 提权能力仅适用于 Windows）*。
+- **macOS（`Apple Silicon` / `Intel`）与 Linux（`x64 .deb`）**：支持远程 SSH、SFTP、主机遥测、端口转发与主机运维等功能 *（Windows ConPTY 本地终端与 UAC 提权能力仅适用于 Windows）*。
 
 ---
 

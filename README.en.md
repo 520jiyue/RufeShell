@@ -61,7 +61,7 @@ Traditional terminal tools often require juggling separate apps for SSH terminal
 Pre-built packages are available on the [GitHub Releases](https://github.com/520jiyue/RufeShell/releases) page:
 
 - **Windows (`x64` / `arm64`)**: NSIS `.exe` (recommended, supports in-app auto-updates) and `.msi` installers — full support including native ConPTY & UAC elevation.
-- **macOS (`Apple Silicon` / `Intel`) & Linux (`x64 AppImage`)**: Remote SSH, SFTP, host telemetry, port forwarding, and ops panels are supported *(local ConPTY & Windows UAC controls are Windows-only)*.
+- **macOS (`Apple Silicon` / `Intel`) & Linux (`x64 .deb`)**: Remote SSH, SFTP, host telemetry, port forwarding, and ops panels are supported *(local ConPTY & Windows UAC controls are Windows-only)*.
 
 ---
 

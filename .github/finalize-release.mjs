@@ -20,7 +20,6 @@ const expectedAssets = new Set([
   `RufeShell_v${version}_darwin_x64.dmg`,
   `RufeShell_v${version}_darwin_aarch64.app.tar.gz`,
   `RufeShell_v${version}_darwin_x64.app.tar.gz`,
-  `RufeShell_v${version}_Linux_x64.AppImage`,
   `RufeShell_v${version}_Linux_x64.deb`,
   'latest.json',
 ]);
@@ -63,6 +62,7 @@ for (const { directory, match } of artifactDirectories) {
     const bundlePath = signaturePath.slice(0, -4);
     const originalAssetName = releaseAssetName(bundlePath, platform, arch);
     const assetName = fixedAssetName(originalAssetName);
+    if (!expectedAssets.has(assetName)) continue;
     if (!fs.existsSync(bundlePath)) throw new Error(`Missing build package: ${bundlePath}`);
     const releaseAsset = await uploadPackage(bundlePath, assetName, 'application/octet-stream');
     const bundle = signaturePath.includes('.app.tar.gz') ? 'app'
@@ -71,7 +71,7 @@ for (const { directory, match } of artifactDirectories) {
           : signaturePath.endsWith('.msi.sig') ? 'msi' : path.extname(bundlePath).slice(1);
     const entry = { signature: fs.readFileSync(signaturePath, 'utf8'), url: releaseAsset.browser_download_url };
     manifest.platforms[`${platform}-${arch}-${bundle}`] = entry;
-    if (['nsis', 'app', 'appimage'].includes(bundle)) manifest.platforms[`${platform}-${arch}`] = entry;
+    if (['nsis', 'app', 'deb'].includes(bundle)) manifest.platforms[`${platform}-${arch}`] = entry;
   }
 
   if (signatures.length === 0) throw new Error(`No signatures found for ${directory}`);

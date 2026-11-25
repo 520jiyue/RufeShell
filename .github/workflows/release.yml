@@ -112,7 +112,7 @@ jobs:
             RufeShell is a modern SSH and local terminal workbench built with Rust and Tauri.
 
             - Windows: x64/ARM64 NSIS installers and an x64 portable archive.
-            - Linux: AppImage and Debian packages for x64 systems.
+            - Linux: Debian (`.deb`) package for x64 systems.
             - macOS: Apple Silicon and Intel `.dmg` installers and `.app.tar.gz` archives.
 
             Windows ConPTY and administrator tools require Windows; SSH, SFTP, monitoring, forwarding and other remote features remain available on other desktop platforms.
@@ -123,7 +123,7 @@ jobs:
           assetNamePattern: RufeShell_v[version]_${{ matrix.assetPlatform }}_[arch][setup][ext]
           updaterJsonPreferNsis: true
           includeUpdaterJson: false
-          args: --target ${{ matrix.target }} ${{ matrix.runner == 'windows-latest' && '--bundles nsis' || matrix.runner == 'ubuntu-22.04' && '--bundles appimage,deb' || '' }}
+          args: --target ${{ matrix.target }} ${{ matrix.runner == 'windows-latest' && '--bundles nsis' || matrix.runner == 'ubuntu-22.04' && '--bundles deb' || '' }}
           retryAttempts: 2
 
       - name: Package Windows x64 portable archive
@@ -146,7 +146,7 @@ jobs:
   finalize:
     name: Finalize release
     needs: publish
-    if: always() && (needs.result == 'success' || inputs.finalize_run_id != '')
+    if: always() && (needs.publish.result == 'success' || inputs.finalize_run_id != '')
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
