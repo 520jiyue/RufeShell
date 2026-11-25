@@ -92,7 +92,7 @@ jobs:
             RufeShell 是基于 Rust 与 Tauri 的现代化 SSH 与本地终端工作台。Windows 安装包支持直接安装；macOS 请根据芯片选择对应版本。
           releaseDraft: false
           prerelease: false
-          releaseAssetNamePattern: RufeShell_v[version]_${{ matrix.assetPlatform }}_[arch][setup][ext]
+          assetNamePattern: RufeShell_v[version]_${{ matrix.assetPlatform }}_[arch][setup][ext]
           updaterJsonPreferNsis: true
           args: --target ${{ matrix.target }} ${{ matrix.runner == 'ubuntu-22.04' && '--bundles appimage,deb,rpm' || '' }}
           retryAttempts: 2
