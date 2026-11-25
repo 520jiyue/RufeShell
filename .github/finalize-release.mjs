@@ -43,6 +43,17 @@ function fixedAssetName(originalName) {
     .replace('_amd64.', '_x64.');
 }
 
+async function uploadPackage(filePath, name, contentType) {
+  const existing = (await octokit.rest.repos.listReleaseAssets({ owner, repo, release_id: release.id, per_page: 100 })).data
+    .find(asset => asset.name === name);
+  if (existing) return existing;
+  const data = fs.readFileSync(filePath);
+  return (await octokit.rest.repos.uploadReleaseAsset({
+    owner, repo, release_id: release.id, name, data,
+    headers: { 'content-type': contentType, 'content-length': data.length },
+  })).data;
+}
+
 for (const { directory, match } of artifactDirectories) {
   const [, platform, arch] = match;
   const signatures = fs.globSync('**/*.sig', { cwd: path.join(packagesDirectory, directory) })
@@ -52,14 +63,8 @@ for (const { directory, match } of artifactDirectories) {
     const bundlePath = signaturePath.slice(0, -4);
     const originalAssetName = releaseAssetName(bundlePath, platform, arch);
     const assetName = fixedAssetName(originalAssetName);
-    const asset = assets.find(item => item.name === assetName);
-    const originalAsset = assets.find(item => item.name === originalAssetName);
-    if (!asset && !originalAsset) throw new Error(`Missing release package: ${originalAssetName} (${signaturePath})`);
-    const releaseAsset = asset ?? originalAsset;
-    if (!asset) {
-      await octokit.rest.repos.updateReleaseAsset({ owner, repo, asset_id: originalAsset.id, name: assetName });
-      releaseAsset.browser_download_url = originalAsset.browser_download_url.replace(originalAssetName, assetName);
-    }
+    if (!fs.existsSync(bundlePath)) throw new Error(`Missing build package: ${bundlePath}`);
+    const releaseAsset = await uploadPackage(bundlePath, assetName, 'application/octet-stream');
     const bundle = signaturePath.includes('.app.tar.gz') ? 'app'
       : signaturePath.includes('.AppImage') ? 'appimage'
         : signaturePath.endsWith('.exe.sig') ? 'nsis'
@@ -80,11 +85,7 @@ const portableName = `RufeShell_v${version}_windows_x64-portable.zip`;
 if (!assets.some(asset => asset.name === portableName)) {
   const portablePath = fs.globSync(`rufeshell-windows-x86_64/**/${portableName}`, { cwd: packagesDirectory })[0];
   if (!portablePath) throw new Error('Missing Windows x64 portable archive');
-  const data = fs.readFileSync(path.join(packagesDirectory, portablePath));
-  await octokit.rest.repos.uploadReleaseAsset({
-    owner, repo, release_id: release.id, name: portableName, data,
-    headers: { 'content-type': 'application/zip', 'content-length': data.length },
-  });
+  await uploadPackage(path.join(packagesDirectory, portablePath), portableName, 'application/zip');
 }
 
 for (const asset of assets) {
