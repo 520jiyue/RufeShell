@@ -5,6 +5,15 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      finalize_run_id:
+        description: Existing build run ID; skip native builds and finalize its artifacts
+        required: false
+        type: string
+      release_tag:
+        description: Existing release tag when finalizing a previous build
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -15,6 +24,7 @@ concurrency:
 
 jobs:
   publish:
+    if: inputs.finalize_run_id == ''
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     outputs:
@@ -27,7 +37,7 @@ jobs:
             runner: windows-latest
             target: x86_64-pc-windows-msvc
             assetPlatform: windows
-            assetArch: x64
+            assetArch: amd64
             signaturePlatform: windows
             signatureArch: x86_64
           - name: Windows ARM64
@@ -136,6 +146,7 @@ jobs:
   finalize:
     name: Finalize release
     needs: publish
+    if: always() && (needs.result == 'success' || inputs.finalize_run_id != '')
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -145,11 +156,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: packages
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.finalize_run_id || github.run_id }}
 
       - name: Package signatures and updater manifest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: v${{ needs.publish.outputs.version }}
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag || format('v{0}', needs.publish.outputs.version) }}
         run: |
           npm install --no-save @octokit/rest
           node .github/finalize-release.mjs

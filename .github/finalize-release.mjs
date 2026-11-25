@@ -34,31 +34,43 @@ function releaseAssetName(bundlePath, platform, arch) {
     .replace(/^RufeShell\.app\.tar\.gz$/, `RufeShell_${displayArch}.app.tar.gz`)
     .replace(/^RufeShell[_-]/, `RufeShell_v${version}_${platform}_`)
     .replace(`_${version}_`, '_')
-    .replace('_amd64.', '_x64.')
     .replace('_en-US.msi', '.msi');
 }
 
-artifactDirectories.forEach(({ directory, match }) => {
+function fixedAssetName(originalName) {
+  return originalName
+    .replace(`_v${version}_linux_`, `_v${version}_Linux_`)
+    .replace('_amd64.', '_x64.');
+}
+
+for (const { directory, match } of artifactDirectories) {
   const [, platform, arch] = match;
   const signatures = fs.globSync('**/*.sig', { cwd: path.join(packagesDirectory, directory) })
     .map(file => path.join(packagesDirectory, directory, file));
 
   for (const signaturePath of signatures) {
     const bundlePath = signaturePath.slice(0, -4);
-    const assetName = releaseAssetName(bundlePath, platform, arch);
+    const originalAssetName = releaseAssetName(bundlePath, platform, arch);
+    const assetName = fixedAssetName(originalAssetName);
     const asset = assets.find(item => item.name === assetName);
-    if (!asset) throw new Error(`Missing release package: ${assetName} (${signaturePath})`);
+    const originalAsset = assets.find(item => item.name === originalAssetName);
+    if (!asset && !originalAsset) throw new Error(`Missing release package: ${originalAssetName} (${signaturePath})`);
+    const releaseAsset = asset ?? originalAsset;
+    if (!asset) {
+      await octokit.rest.repos.updateReleaseAsset({ owner, repo, asset_id: originalAsset.id, name: assetName });
+      releaseAsset.browser_download_url = originalAsset.browser_download_url.replace(originalAssetName, assetName);
+    }
     const bundle = signaturePath.includes('.app.tar.gz') ? 'app'
       : signaturePath.includes('.AppImage') ? 'appimage'
         : signaturePath.endsWith('.exe.sig') ? 'nsis'
           : signaturePath.endsWith('.msi.sig') ? 'msi' : path.extname(bundlePath).slice(1);
-    const entry = { signature: fs.readFileSync(signaturePath, 'utf8'), url: asset.browser_download_url };
+    const entry = { signature: fs.readFileSync(signaturePath, 'utf8'), url: releaseAsset.browser_download_url };
     manifest.platforms[`${platform}-${arch}-${bundle}`] = entry;
     if (['nsis', 'app', 'appimage'].includes(bundle)) manifest.platforms[`${platform}-${arch}`] = entry;
   }
 
   if (signatures.length === 0) throw new Error(`No signatures found for ${directory}`);
-});
+}
 
 for (const platform of ['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'darwin-x86_64', 'darwin-aarch64']) {
   if (!manifest.platforms[platform]) throw new Error(`Missing updater entry: ${platform}`);
