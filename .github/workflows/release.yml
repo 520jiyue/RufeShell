@@ -131,7 +131,7 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
-          $executable = Get-Item "src-tauri/target/${{ matrix.target }}/release/finalpowershell.exe"
+          $executable = Get-Item "src-tauri/target/${{ matrix.target }}/release/RufeShell.exe"
           $archive = "src-tauri/target/${{ matrix.target }}/release/bundle/RufeShell_v${version}_windows_x64-portable.zip"
           Compress-Archive -LiteralPath $executable.FullName -DestinationPath $archive
 
