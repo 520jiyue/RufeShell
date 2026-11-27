@@ -94,7 +94,11 @@ Pre-built packages are available on the [GitHub Releases](https://github.com/520
 
 ## Features
 
-### 1. SSH & Built-in Local ConPTY Sessions
+Click any module below to expand full capabilities:
+
+<details>
+<summary><strong>1. SSH & Built-in Local ConPTY Sessions</strong> — Multi-tab SSH, host key verification, auto reconnect & elevated PowerShell / CMD / WSL</summary>
+
 - **Native SSH Interactive Terminal**: Multi-tabbed `russh` client supporting password and OpenSSH private key authentication, automatic terminal resize sync, and keepalive.
 - **Host Key Verification**: Displays the server's SHA-256 public key fingerprint on first connect (`Trust Once` or `Trust & Save`) and blocks connections if a saved key changes.
 - **Auto Reconnect**: Preserves terminal scrollback on network drops and retries based on configurable timeout and max-attempt limits, plus one-click manual reconnect.
@@ -103,7 +107,11 @@ Pre-built packages are available on the [GitHub Releases](https://github.com/520
   - **Built-in Elevated Tabs**: Run individual local terminal tabs as Administrator inside RufeShell via a hidden UAC ConPTY bridge (`Ask` / `Standard` / `Admin` modes, synced across the sidebar toggle, prompt dialog, and Settings).
   - **App-wide Admin Mode**: Relaunch the entire RufeShell workbench as Administrator via Windows UAC so all built-in local tabs inherit elevated tokens cleanly.
 
-### 2. Command Productivity & Desktop Experience
+</details>
+
+<details>
+<summary><strong>2. Command Productivity & Desktop Experience</strong> — History recall, command snippets, single-instance tray & signed updates</summary>
+
 - **Command History**: Records command, timestamp, server, and outcome; supports `↑` / `↓` recall, search, deduplication, clearing, and automatic filtering of password/token patterns.
 - **Command Snippets**: Organize frequently used commands into groups with template variables (e.g. `{domain}`, `{service}`) and `Alt + 1` ~ `Alt + 9` quick triggers.
 - **Terminal Tools**: Output search (`Ctrl + F`), screen clear (`Ctrl + Shift + L`), font & size controls, copy-on-select, right-click paste, and terminal log export.
@@ -111,29 +119,48 @@ Pre-built packages are available on the [GitHub Releases](https://github.com/520
 - **Single-Instance & System Tray**: Prevents duplicate app instances (re-launching restores and focuses the existing window, even from the tray), with configurable close behavior (*Ask every time* / *Minimize to tray* / *Exit*).
 - **In-App Auto-Updater**: Signed updates via `tauri-plugin-updater` (`latest.json` from GitHub Releases) with startup checks, release notes preview, download progress, and one-click install & restart.
 
-### 3. SFTP File Management & Dual-Pane Sync
+</details>
+
+<details>
+<summary><strong>3. SFTP File Management & Dual-Pane Sync</strong> — Side-by-side diff, remote editor, drag-and-drop & resumable queue</summary>
+
 - **Full Context Menu**: Create file/folder, rename, two-step delete confirmation, copy path, and inspect/update Linux `chmod` permissions.
 - **Safe Remote Text Editor**: View and edit UTF-8 files up to 1 MB with binary file protection and optional automatic `.bak` backup before saving.
 - **Transfer Queue**: Live speed, progress, ETA, pause/resume/cancel/retry controls, large-file resume, conflict resolution prompts, and optional SHA-256 integrity verification.
 - **Directory Transfers & Drag-and-Drop**: Upload or download entire folders recursively, or drag files/folders straight from Windows Explorer.
 - **Dual-Pane Browser & Diff**: Side-by-side local vs. remote comparison with quick paths and on-demand batch sync.
 
-### 4. Host Telemetry & Operations
+</details>
+
+<details>
+<summary><strong>4. Host Telemetry & Operations</strong> — Real-time metrics, threshold alerts, processes / Systemd / Docker & port forwarding</summary>
+
 - **Customizable Telemetry Sidebar**: Dedicated polling channel displaying CPU trends, memory, swap, network throughput, disk usage, top processes, and mounts with configurable intervals, collapsible cards, visibility toggles, and warning thresholds.
 - **Resource History & Alert Rules**: Extended resource trend charts, peak tracking, and threshold alerts with cooldown timers.
 - **Process & Service Management**: Search, sort, inspect, and terminate remote processes with confirmation; browse, inspect logs, and control `systemd` units.
 - **Docker Panel**: Inspect container status, CPU/memory usage, port mappings, container logs, and start/stop/restart actions.
 - **SSH Port Forwarding**: Visual management and toggling for Local (`-L`), Remote (`-R`), and Dynamic SOCKS5 (`-D`) forwarding rules.
 
-### 5. Themes & Internationalization
+</details>
+
+<details>
+<summary><strong>5. Themes & Internationalization</strong> — 7 synchronized light/dark themes & live Chinese / English UI switching</summary>
+
 - **7 Synchronized Themes** (UI + terminal):
   - Dark: `Obsidian Emerald` (default), `Tokyo Night`, `Dracula`, `GitHub Dark`
   - Light: `Morning Mist`, `Solarized Light`, `Catppuccin Latte`
 - **Bilingual UI**: Switch seamlessly between **简体中文 (`zh-CN`)** and **English (`en`)** in Settings with live preview and synced system tray labels.
 
+</details>
+
 ---
 
 ## Keyboard Shortcuts
+
+> Press `F1` or `Ctrl + /` anytime inside the app to open the shortcut cheat sheet.
+
+<details>
+<summary><strong>Expand full keyboard shortcut reference (Workbench / Tabs / Terminal & Panels / Commands)</strong></summary>
 
 | Category | Shortcut | Action |
 | --- | --- | --- |
@@ -155,9 +182,16 @@ Pre-built packages are available on the [GitHub Releases](https://github.com/520
 | | `Alt + 1` ~ `9` | Trigger bound snippet |
 | | `↑` / `↓` | Quick recall history inside terminal |
 
+</details>
+
 ---
 
 ## Build from Source
+
+> Only needed for local compilation or development — end users can grab pre-built installers from Releases.
+
+<details>
+<summary><strong>Expand prerequisites, build commands, and verification checks</strong></summary>
 
 ### Prerequisites
 - **OS**: Windows 10 / 11 (64-bit)
@@ -199,9 +233,16 @@ cargo test --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
 
+</details>
+
 ---
 
 ## Project Structure
+
+Built with a **TypeScript + Vite** frontend (`src/`) and a **Rust + Tauri 2** backend (`src-tauri/`):
+
+<details>
+<summary><strong>Expand full project directory layout</strong></summary>
 
 ```text
 RufeShell/
@@ -237,6 +278,8 @@ RufeShell/
         ├── forwarding.rs       # Local / Remote / Dynamic SSH port forwarding
         └── ops.rs              # Remote process, systemd & Docker control
 ```
+
+</details>
 
 ---
 
